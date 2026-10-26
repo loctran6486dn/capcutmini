@@ -205,6 +205,7 @@ class TimelineComponent {
 
     // Event: trim handles
     const onStartTrim = (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this.initClipTrim(e, trackType, clip, 'start');
     };
@@ -212,6 +213,7 @@ class TimelineComponent {
     handleStart.addEventListener('touchstart', onStartTrim, { passive: false });
 
     const onEndTrim = (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this.initClipTrim(e, trackType, clip, 'end');
     };
@@ -256,7 +258,8 @@ class TimelineComponent {
   }
 
   initClipTrim(e, trackType, clip, handleType) {
-    if (e.type === 'mousedown') e.preventDefault();
+    e.preventDefault();
+    e.stopPropagation();
     const startX = e.touches ? e.touches[0].clientX : e.clientX;
     const initialStartTime = clip.startTime;
     const initialDuration = clip.duration;
@@ -264,6 +267,7 @@ class TimelineComponent {
     const pps = this.getPixelsPerSecond();
 
     const onMove = (moveEvent) => {
+      if (moveEvent.cancelable) moveEvent.preventDefault();
       const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
       const deltaX = currentX - startX;
       const deltaTime = deltaX / pps;
@@ -304,11 +308,13 @@ class TimelineComponent {
     if (!this.playheadHead) return;
 
     const startDrag = (e) => {
-      if (e.type === 'mousedown') e.preventDefault();
+      e.preventDefault();
+      e.stopPropagation();
       this.isDraggingPlayhead = true;
 
       const onMove = (moveEvent) => {
         if (!this.isDraggingPlayhead) return;
+        if (moveEvent.cancelable) moveEvent.preventDefault();
         const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
         const rect = this.tracksContainer.getBoundingClientRect();
         const clientX = currentX - rect.left + this.tracksContainer.scrollLeft;

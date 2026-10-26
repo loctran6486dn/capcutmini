@@ -34,6 +34,15 @@
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-touch-callout: none; /* Disable iOS Copy/Look Up callout */
+  -webkit-user-select: none;   /* Disable iOS text selection */
+  user-select: none;
+}
+
+input, textarea {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 body {
@@ -43,6 +52,8 @@ body {
   overflow: hidden;
   height: 100vh;
   width: 100vw;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -322,13 +333,28 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 12px;
-  height: 16px;
+  width: 14px;
+  height: 18px;
   background: var(--playhead-color);
   clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
   cursor: grab;
   pointer-events: auto;
   box-shadow: 0 2px 6px rgba(0, 240, 255, 0.5);
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+/* Expanded Touch Hitbox for Playhead - 60px x 60px */
+.playhead-head::before {
+  content: '';
+  position: absolute;
+  top: -15px;
+  bottom: -25px;
+  left: -22px;
+  right: -22px;
+  touch-action: none;
+  cursor: grab;
 }
 
 .playhead-head:active {
@@ -432,23 +458,38 @@ body {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 10px;
-  background: rgba(255, 255, 255, 0.2);
+  width: 14px;
+  background: rgba(0, 229, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: ew-resize;
   opacity: 0;
   transition: opacity 0.15s, background 0.15s;
-  z-index: 5;
+  z-index: 10;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+/* Expanded Hitbox so finger never misses trimming */
+.clip-handle::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: -14px;
+  right: -14px;
+  touch-action: none;
 }
 
 .clip-handle::after {
   content: '';
-  width: 2px;
-  height: 12px;
+  width: 3px;
+  height: 16px;
   background: #ffffff;
-  border-radius: 1px;
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
 .timeline-clip:hover .clip-handle,
@@ -456,7 +497,8 @@ body {
   opacity: 1;
 }
 
-.clip-handle:hover {
+.clip-handle:hover,
+.clip-handle:active {
   background: var(--accent-cyan);
 }
 
@@ -866,8 +908,39 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
   /* Touch-friendly Playhead on Mobile */
   .playhead-head {
-    width: 18px;
-    height: 20px;
+    width: 22px;
+    height: 24px;
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+  }
+  .playhead-head::before {
+    top: -20px;
+    bottom: -35px;
+    left: -25px;
+    right: -25px;
+  }
+
+  /* CapCut-style Trimming Handles on Mobile */
+  .clip-handle {
+    width: 24px;
+    opacity: 0.85;
+    background: rgba(0, 229, 255, 0.25);
+    display: flex !important;
+  }
+  .timeline-clip.selected .clip-handle {
+    opacity: 1;
+    background: rgba(0, 229, 255, 0.45);
+  }
+  .clip-handle::before {
+    top: -12px;
+    bottom: -12px;
+    left: -18px;
+    right: -18px;
+  }
+  .clip-handle::after {
+    width: 4px;
+    height: 22px;
+    background: #ffffff;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.9);
   }
 
   /* Zoom controls hide slider on small screens to save space */
