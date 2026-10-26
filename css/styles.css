@@ -67,7 +67,10 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  position: relative;
+  overflow: hidden;
 }
 
 /* Header Navbar */
@@ -80,6 +83,23 @@ body {
   justify-content: space-between;
   padding: 0 16px;
   z-index: 40;
+  flex-shrink: 0;
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-undo-group {
+  display: flex;
+  gap: 4px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
 }
 
 .logo-badge {
@@ -702,7 +722,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 
 /* ==========================================================================
-   Mobile & Responsive Layout (CapCut Mobile View)
+   Mobile & Responsive Layout (Optimized for iPhone 13 Pro Max & Smartphones)
    ========================================================================== */
 @media (max-width: 768px) {
   body {
@@ -714,30 +734,62 @@ input[type="range"]::-webkit-slider-thumb:hover {
     height: 100dvh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
+  /* Header Navbar with iPhone Notch Safe-Area */
   .app-header {
-    height: 44px;
-    padding: 0 10px;
+    height: calc(48px + max(env(safe-area-inset-top, 0px), 36px));
+    padding-top: max(env(safe-area-inset-top, 0px), 36px);
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
     order: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #141419;
   }
 
-  .logo-badge span:first-of-type {
-    font-size: 13px;
+  .logo-badge {
+    gap: 5px;
   }
   .logo-badge .badge {
     display: none;
+  }
+  .logo-title {
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .header-center {
+    gap: 6px;
   }
 
   #select-aspect-ratio {
     max-width: 110px;
     font-size: 11px;
-    padding: 3px 4px;
+    padding: 4px 6px;
+    height: 30px;
+    background-position: right 4px center;
+  }
+
+  .header-undo-group .btn-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .header-right {
+    flex-shrink: 0;
   }
 
   #btn-open-export {
-    padding: 4px 10px;
-    font-size: 11px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    border-radius: 6px;
+    height: 30px;
   }
 
   /* Unfold workspace-body so children can be ordered with timeline */
@@ -749,12 +801,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   .preview-stage {
     order: 2;
     flex: 1;
-    min-height: 180px;
-    max-height: 40vh;
+    min-height: 160px;
+    max-height: 38vh;
+    display: flex;
+    flex-direction: column;
+    background: #09090b;
   }
 
   .preview-viewport {
-    padding: 8px;
+    padding: 6px;
+    flex: 1;
   }
 
   .player-controls-bar {
@@ -764,7 +820,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
   #timecode-display {
     font-size: 11px;
-    min-width: 100px;
+    min-width: 90px;
+  }
+
+  #btn-play {
+    width: 32px;
+    height: 32px;
   }
 
   /* Timeline Section (Middle) */
@@ -775,9 +836,15 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 
   .timeline-toolbar {
-    height: 36px;
+    height: 42px;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-color);
   }
   .timeline-toolbar::-webkit-scrollbar {
     display: none;
@@ -785,26 +852,45 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
   .timeline-tools-group {
     flex-shrink: 0;
-    gap: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .btn {
+  .timeline-tools-group .btn {
     padding: 4px 8px;
     font-size: 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  /* Sidebar (Bottom Sheet / Drawer) */
+  /* Touch-friendly Playhead on Mobile */
+  .playhead-head {
+    width: 18px;
+    height: 20px;
+  }
+
+  /* Zoom controls hide slider on small screens to save space */
+  #timeline-zoom-slider {
+    display: none;
+  }
+
+  /* Sidebar (Bottom Sheet / Drawer) with iPhone Home Bar Safe-Area */
   .sidebar {
     order: 4;
     width: 100%;
-    height: 180px;
+    height: calc(180px + max(env(safe-area-inset-bottom, 0px), 20px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
     border-right: none;
     border-top: 1px solid var(--border-color);
     background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
   }
 
   .sidebar-tabs {
     background: var(--bg-primary);
+    flex-shrink: 0;
   }
 
   .tab-btn {
@@ -813,22 +899,27 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 
   .sidebar-content {
+    flex: 1;
     padding: 8px;
-    max-height: 136px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .dropzone {
-    padding: 12px;
+    padding: 10px 8px;
+    border-radius: 8px;
+    background: rgba(0, 229, 255, 0.03);
   }
   .dropzone svg {
-    width: 22px;
-    height: 22px;
-    margin-bottom: 4px;
+    width: 24px;
+    height: 24px;
+    margin-bottom: 2px;
   }
 
   /* Modal on Mobile */
   .modal-box {
     width: 95vw;
     padding: 16px;
+    margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

@@ -16,42 +16,39 @@
     <!-- Header Top Navbar -->
     <header class="app-header">
       <div class="logo-badge">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="23 7 16 12 23 17 23 7"></polygon>
           <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
         </svg>
-        <span>CapCut <span style="color: var(--accent-cyan);">Mini</span></span>
+        <span class="logo-title">CapCut <span style="color: var(--accent-cyan);">Mini</span></span>
         <span class="badge">100% Free</span>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <!-- Aspect Ratio Selector -->
-        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted);">
-          <span>Tỉ lệ:</span>
-          <select id="select-aspect-ratio" class="form-select" style="width: auto; padding: 4px 8px; font-size: 12px;">
-            <option value="16:9">16:9 (YouTube ngang)</option>
-            <option value="9:16">9:16 (TikTok / Reels / Shorts)</option>
-            <option value="1:1">1:1 (Instagram vuông)</option>
-            <option value="4:5">4:5 (Facebook dọc)</option>
-          </select>
-        </div>
+      <div class="header-center">
+        <!-- Aspect Ratio Selector (Compact on mobile) -->
+        <select id="select-aspect-ratio" class="form-select" title="Tỉ lệ khung hình">
+          <option value="9:16">📱 9:16</option>
+          <option value="16:9" selected>💻 16:9</option>
+          <option value="1:1">⏹ 1:1</option>
+          <option value="4:5">📐 4:5</option>
+        </select>
 
         <!-- Undo & Redo -->
-        <div style="display: flex; gap: 4px;">
-          <button id="btn-undo" class="btn-icon" title="Hoàn tác (Cmd/Ctrl + Z)">
+        <div class="header-undo-group">
+          <button id="btn-undo" class="btn-icon" title="Hoàn tác">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"></path></svg>
           </button>
-          <button id="btn-redo" class="btn-icon" title="Làm lại (Cmd/Ctrl + Shift + Z)">
+          <button id="btn-redo" class="btn-icon" title="Làm lại">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path></svg>
           </button>
         </div>
       </div>
 
       <!-- Export Button -->
-      <div>
+      <div class="header-right">
         <button id="btn-open-export" class="btn btn-primary">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          <span>Xuất Video (MP4)</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span class="btn-export-text">Xuất MP4</span>
         </button>
       </div>
     </header>
@@ -81,13 +78,13 @@
           <!-- Panel 1: Media Library -->
           <div id="tab-panel-media" class="tab-panel">
             <div id="media-dropzone" class="dropzone">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="1.8" style="margin-bottom: 8px;">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2" style="margin-bottom: 6px;">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
-              <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">Kéo & thả video / ảnh vào đây</div>
-              <div style="font-size: 11px; color: var(--text-muted);">hoặc bấm để duyệt tệp từ máy</div>
+              <div class="dropzone-title" style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">+ Thêm Video / Ảnh / Nhạc</div>
+              <div class="dropzone-subtitle" style="font-size: 11px; color: var(--text-muted);">Chạm để chọn từ Album điện thoại hoặc kéo thả</div>
               <input type="file" id="media-file-input" multiple accept="video/*,image/*,audio/*" style="display: none;">
             </div>
 
