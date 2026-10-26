@@ -128,10 +128,10 @@ class TimelineComponent {
     const minWidth = this.timeToPixels(this.state.duration) + 300;
     this.tracksContent.style.width = `${minWidth}px`;
 
-    // Render 3 tracks in order: Text -> Video -> Audio
+    // Render 3 tracks in order: 1. Video (top) -> 2. Text (middle) -> 3. Audio (bottom)
     const trackOrder = [
-      { key: 'textTrack', label: 'T', name: 'Văn bản (Text)' },
       { key: 'videoTrack', label: 'V', name: 'Video chính' },
+      { key: 'textTrack', label: 'T', name: 'Văn bản (Text)' },
       { key: 'audioTrack', label: 'A', name: 'Âm thanh (BGM)' }
     ];
 

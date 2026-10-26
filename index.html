@@ -27,8 +27,8 @@
       <div class="header-center">
         <!-- Aspect Ratio Selector (Compact on mobile) -->
         <select id="select-aspect-ratio" class="form-select" title="Tỉ lệ khung hình">
-          <option value="9:16">📱 9:16</option>
-          <option value="16:9" selected>💻 16:9</option>
+          <option value="9:16" selected>📱 9:16</option>
+          <option value="16:9">💻 16:9</option>
           <option value="1:1">⏹ 1:1</option>
           <option value="4:5">📐 4:5</option>
         </select>
@@ -265,7 +265,133 @@
       </section>
     </main>
 
-    <!-- Bottom Timeline Section (CapCut Workspace) -->
+    <!-- Bottom Action Dock (CapCut Horizontal Tool Bar) -->
+    <nav class="bottom-action-dock" id="bottom-action-dock">
+      <div class="dock-scroll-container">
+        <!-- 1. Video button -->
+        <button class="dock-btn" id="btn-dock-video" title="Thêm Video">
+          <div class="dock-icon-wrap icon-video">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+          </div>
+          <span>+ Video</span>
+        </button>
+
+        <!-- 2. Photo button -->
+        <button class="dock-btn" id="btn-dock-image" title="Thêm Ảnh">
+          <div class="dock-icon-wrap icon-image">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          </div>
+          <span>+ Ảnh</span>
+        </button>
+
+        <!-- 3. Audio button -->
+        <button class="dock-btn" id="btn-dock-audio" title="Thêm Nhạc">
+          <div class="dock-icon-wrap icon-audio">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+          </div>
+          <span>+ Nhạc</span>
+        </button>
+
+        <!-- 4. Text Overlay button -->
+        <button class="dock-btn" id="btn-dock-text" title="Chèn Văn Bản">
+          <div class="dock-icon-wrap icon-text">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+          </div>
+          <span>Văn bản</span>
+        </button>
+
+        <!-- 5. Filters button -->
+        <button class="dock-btn" id="btn-dock-filters" title="Bộ Lọc Màu">
+          <div class="dock-icon-wrap icon-filters">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 1 0 20v-20z"></path></svg>
+          </div>
+          <span>Bộ lọc</span>
+        </button>
+
+        <!-- 6. Demo Clip button -->
+        <button class="dock-btn" id="btn-dock-sample" title="Clip Mẫu Dùng Thử">
+          <div class="dock-icon-wrap icon-sample">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          </div>
+          <span>Clip mẫu</span>
+        </button>
+      </div>
+
+      <!-- Hidden File Pickers for Video, Image, Audio -->
+      <input type="file" id="input-pick-video" accept="video/*" style="display:none;" multiple>
+      <input type="file" id="input-pick-image" accept="image/*" style="display:none;" multiple>
+      <input type="file" id="input-pick-audio" accept="audio/*" style="display:none;" multiple>
+    </nav>
+
+    <!-- Slide-up Bottom Drawers for Text and Filters -->
+    <div id="drawer-overlay" class="drawer-overlay"></div>
+
+    <!-- Text Drawer -->
+    <div id="drawer-text" class="dock-drawer">
+      <div class="drawer-header">
+        <span class="drawer-title">✍️ Chèn & Chỉnh Sửa Văn Bản</span>
+        <button id="btn-close-text-drawer" class="drawer-close-btn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-preset-grid">
+          <button id="btn-add-title-drawer" class="drawer-preset-btn">
+            <span>🔤</span>
+            <span>Tiêu đề</span>
+          </button>
+          <button id="btn-add-subtitle-drawer" class="drawer-preset-btn">
+            <span>💬</span>
+            <span>Phụ đề</span>
+          </button>
+          <button id="btn-add-tiktok-drawer" class="drawer-preset-btn">
+            <span>🔥</span>
+            <span style="color:#facc15;">TikTok Vàng</span>
+          </button>
+          <button id="btn-add-neon-drawer" class="drawer-preset-btn">
+            <span>⚡</span>
+            <span style="color:#00f2fe;">Cyberpunk</span>
+          </button>
+        </div>
+
+        <!-- Text Properties for selected text -->
+        <div id="drawer-text-props" style="margin-top: 10px; display: none;">
+          <div class="form-group" style="margin-bottom: 8px;">
+            <input type="text" id="drawer-prop-text" class="form-input" placeholder="Nhập nội dung chữ...">
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <span style="font-size: 11px; color: var(--text-muted); min-width: 45px;">Cỡ chữ:</span>
+            <input type="range" id="drawer-prop-font-size" min="16" max="140" value="42" style="flex:1;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 4px; font-size: 11px;">
+              <span>Màu:</span>
+              <input type="color" id="drawer-prop-color" value="#ffffff" style="width: 32px; height: 26px; border-radius: 4px; background: none; border: 1px solid var(--border-color);">
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px; font-size: 11px;">
+              <span>Viền:</span>
+              <input type="color" id="drawer-prop-stroke" value="#000000" style="width: 32px; height: 26px; border-radius: 4px; background: none; border: 1px solid var(--border-color);">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Drawer -->
+    <div id="drawer-filter" class="dock-drawer">
+      <div class="drawer-header">
+        <span class="drawer-title">🎨 Bộ Lọc Màu & Hiệu Ứng</span>
+        <button id="btn-close-filter-drawer" class="drawer-close-btn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-preset-grid">
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="normal">Bình thường</button>
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="cinematic">🎬 Điện ảnh</button>
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="vibrant">🌈 Tươi tắn</button>
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="vintage">🎞️ Cổ điển</button>
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="bw">⬛ Trắng đen</button>
+          <button class="drawer-preset-btn filter-preset-btn" data-preset="dreamy">✨ Mơ mộng</button>
+        </div>
+      </div>
+    </div>
     <section class="timeline-section">
       <!-- Timeline Toolbar -->
       <div class="timeline-toolbar">

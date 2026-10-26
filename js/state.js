@@ -38,9 +38,9 @@ class AppState extends EventEmitter {
     // Project Configurations
     this.project = {
       name: 'CapCut Mini Project',
-      aspectRatio: '16:9',
-      width: 1920,
-      height: 1080,
+      aspectRatio: '9:16',
+      width: 1080,
+      height: 1920,
       fps: 30
     };
 

@@ -138,6 +138,223 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // 5. Bottom Action Dock & Drawers Controller
+  const btnDockVideo = document.getElementById('btn-dock-video');
+  const btnDockImage = document.getElementById('btn-dock-image');
+  const btnDockAudio = document.getElementById('btn-dock-audio');
+  const btnDockText = document.getElementById('btn-dock-text');
+  const btnDockFilters = document.getElementById('btn-dock-filters');
+  const btnDockSample = document.getElementById('btn-dock-sample');
+
+  const inputPickVideo = document.getElementById('input-pick-video');
+  const inputPickImage = document.getElementById('input-pick-image');
+  const inputPickAudio = document.getElementById('input-pick-audio');
+
+  const drawerOverlay = document.getElementById('drawer-overlay');
+  const drawerText = document.getElementById('drawer-text');
+  const drawerFilter = document.getElementById('drawer-filter');
+
+  const closeDrawers = () => {
+    if (drawerText) drawerText.classList.remove('open');
+    if (drawerFilter) drawerFilter.classList.remove('open');
+    if (drawerOverlay) drawerOverlay.classList.remove('open');
+  };
+
+  if (drawerOverlay) drawerOverlay.addEventListener('click', closeDrawers);
+  const btnCloseTextDrawer = document.getElementById('btn-close-text-drawer');
+  if (btnCloseTextDrawer) btnCloseTextDrawer.addEventListener('click', closeDrawers);
+  const btnCloseFilterDrawer = document.getElementById('btn-close-filter-drawer');
+  if (btnCloseFilterDrawer) btnCloseFilterDrawer.addEventListener('click', closeDrawers);
+
+  // File picker triggers
+  if (btnDockVideo && inputPickVideo) {
+    btnDockVideo.addEventListener('click', () => inputPickVideo.click());
+    inputPickVideo.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        mediaManager.handleFiles(e.target.files);
+        e.target.value = '';
+      }
+    });
+  }
+
+  if (btnDockImage && inputPickImage) {
+    btnDockImage.addEventListener('click', () => inputPickImage.click());
+    inputPickImage.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        mediaManager.handleFiles(e.target.files);
+        e.target.value = '';
+      }
+    });
+  }
+
+  if (btnDockAudio && inputPickAudio) {
+    btnDockAudio.addEventListener('click', () => inputPickAudio.click());
+    inputPickAudio.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        mediaManager.handleFiles(e.target.files);
+        e.target.value = '';
+      }
+    });
+  }
+
+  if (btnDockSample) {
+    btnDockSample.addEventListener('click', () => {
+      mediaManager.createSampleMedia();
+    });
+  }
+
+  // Text Drawer triggers
+  if (btnDockText && drawerText) {
+    btnDockText.addEventListener('click', () => {
+      closeDrawers();
+      drawerText.classList.add('open');
+      if (drawerOverlay) drawerOverlay.classList.add('open');
+    });
+
+    const addTitleBtn = document.getElementById('btn-add-title-drawer');
+    if (addTitleBtn) {
+      addTitleBtn.addEventListener('click', () => {
+        state.addClipToTrack('textTrack', {
+          text: 'TIÊU ĐỀ VIDEO',
+          fontSize: 60,
+          color: '#ffffff',
+          strokeColor: '#000000',
+          strokeWidth: 4,
+          duration: 4,
+          x: 0.5,
+          y: 0.3
+        });
+        closeDrawers();
+      });
+    }
+
+    const addSubtitleBtn = document.getElementById('btn-add-subtitle-drawer');
+    if (addSubtitleBtn) {
+      addSubtitleBtn.addEventListener('click', () => {
+        state.addClipToTrack('textTrack', {
+          text: 'Thêm phụ đề nội dung ở đây...',
+          fontSize: 38,
+          color: '#ffffff',
+          strokeColor: '#000000',
+          strokeWidth: 2,
+          bgColor: 'rgba(0, 0, 0, 0.65)',
+          duration: 3,
+          x: 0.5,
+          y: 0.82
+        });
+        closeDrawers();
+      });
+    }
+
+    const addTiktokBtn = document.getElementById('btn-add-tiktok-drawer');
+    if (addTiktokBtn) {
+      addTiktokBtn.addEventListener('click', () => {
+        state.addClipToTrack('textTrack', {
+          text: 'PHONG CÁCH TIKTOK 🔥',
+          fontSize: 50,
+          color: '#facc15',
+          strokeColor: '#000000',
+          strokeWidth: 5,
+          duration: 3.5,
+          x: 0.5,
+          y: 0.5
+        });
+        closeDrawers();
+      });
+    }
+
+    const addNeonBtn = document.getElementById('btn-add-neon-drawer');
+    if (addNeonBtn) {
+      addNeonBtn.addEventListener('click', () => {
+        state.addClipToTrack('textTrack', {
+          text: 'NEON CYBERPUNK ⚡',
+          fontSize: 46,
+          color: '#00f2fe',
+          strokeColor: '#4c1d95',
+          strokeWidth: 4,
+          bgColor: 'rgba(15, 23, 42, 0.8)',
+          duration: 4,
+          x: 0.5,
+          y: 0.5
+        });
+        closeDrawers();
+      });
+    }
+
+    // Text Properties in Drawer
+    const drawerPropText = document.getElementById('drawer-prop-text');
+    const drawerPropSize = document.getElementById('drawer-prop-font-size');
+    const drawerPropColor = document.getElementById('drawer-prop-color');
+    const drawerPropStroke = document.getElementById('drawer-prop-stroke');
+    const drawerTextPropsContainer = document.getElementById('drawer-text-props');
+
+    if (drawerPropText) {
+      drawerPropText.addEventListener('input', (e) => {
+        const selected = state.getSelectedClip();
+        if (selected && selected.type === 'text') {
+          state.updateClip('textTrack', selected.id, { text: e.target.value });
+        }
+      });
+    }
+
+    if (drawerPropSize) {
+      drawerPropSize.addEventListener('input', (e) => {
+        const selected = state.getSelectedClip();
+        if (selected && selected.type === 'text') {
+          state.updateClip('textTrack', selected.id, { fontSize: parseInt(e.target.value) });
+        }
+      });
+    }
+
+    if (drawerPropColor) {
+      drawerPropColor.addEventListener('input', (e) => {
+        const selected = state.getSelectedClip();
+        if (selected && selected.type === 'text') {
+          state.updateClip('textTrack', selected.id, { color: e.target.value });
+        }
+      });
+    }
+
+    if (drawerPropStroke) {
+      drawerPropStroke.addEventListener('input', (e) => {
+        const selected = state.getSelectedClip();
+        if (selected && selected.type === 'text') {
+          state.updateClip('textTrack', selected.id, { strokeColor: e.target.value });
+        }
+      });
+    }
+
+    state.on('clip:selected', (selected) => {
+      const isText = selected && selected.type === 'text';
+      if (drawerTextPropsContainer) {
+        drawerTextPropsContainer.style.display = isText ? 'block' : 'none';
+        if (isText) {
+          if (drawerPropText) drawerPropText.value = selected.text || '';
+          if (drawerPropSize) drawerPropSize.value = selected.fontSize || 42;
+          if (drawerPropColor) drawerPropColor.value = selected.color || '#ffffff';
+          if (drawerPropStroke) drawerPropStroke.value = selected.strokeColor || '#000000';
+        }
+      }
+    });
+  }
+
+  // Filter Drawer triggers
+  if (btnDockFilters && drawerFilter) {
+    btnDockFilters.addEventListener('click', () => {
+      closeDrawers();
+      drawerFilter.classList.add('open');
+      if (drawerOverlay) drawerOverlay.classList.add('open');
+    });
+
+    drawerFilter.querySelectorAll('.filter-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const preset = btn.dataset.preset;
+        filterManager.applyPreset(preset);
+        closeDrawers();
+      });
+    });
+  }
+
   // Initial render
   state.recalculateDuration();
   renderer.renderCurrentFrame();

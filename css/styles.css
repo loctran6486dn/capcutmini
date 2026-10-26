@@ -839,25 +839,34 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: contents;
   }
 
-  /* Preview Stage (Top half) */
+  /* Completely hide the old desktop sidebar on mobile */
+  .sidebar {
+    display: none !important;
+  }
+
+  /* Preview Stage (Maximizes vertical height for portrait video) */
   .preview-stage {
     order: 2;
-    flex: 1;
-    min-height: 160px;
-    max-height: 38vh;
+    flex: 1 !important;
+    min-height: 0 !important;
+    max-height: none !important;
     display: flex;
     flex-direction: column;
     background: #09090b;
+    position: relative;
+    overflow: hidden;
   }
 
   .preview-viewport {
     padding: 6px;
     flex: 1;
+    min-height: 0;
   }
 
   .player-controls-bar {
     height: 38px;
     padding: 0 10px;
+    flex-shrink: 0;
   }
 
   #timecode-display {
@@ -866,19 +875,22 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 
   #btn-play {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
   }
 
-  /* Timeline Section (Middle) */
+  /* Timeline Section (Middle) - Exactly 3 tracks, NO VERTICAL SCROLL */
   .timeline-section {
     order: 3;
-    height: 200px;
+    height: 180px;
+    flex-shrink: 0;
     border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
   }
 
   .timeline-toolbar {
-    height: 42px;
+    height: 38px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     padding: 0 8px;
@@ -887,6 +899,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     justify-content: flex-start;
     gap: 8px;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
   }
   .timeline-toolbar::-webkit-scrollbar {
     display: none;
@@ -904,6 +917,39 @@ input[type="range"]::-webkit-slider-thumb:hover {
     font-size: 11px;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+
+  /* Tracks Container: ONLY horizontal scroll (pan-x), NEVER vertical scroll */
+  .timeline-tracks-container {
+    flex: 1;
+    position: relative;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    touch-action: pan-x !important;
+    -webkit-overflow-scrolling: touch;
+    background: #0d0d11;
+  }
+
+  .tracks-content {
+    position: relative;
+    height: 100%;
+    padding: 3px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: hidden !important;
+    touch-action: pan-x !important;
+  }
+
+  .timeline-track {
+    height: 35px;
+    margin: 0 8px;
+    flex-shrink: 0;
+  }
+
+  .track-badge {
+    padding: 1px 5px;
+    font-size: 9px;
   }
 
   /* Touch-friendly Playhead on Mobile */
@@ -948,45 +994,15 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: none;
   }
 
-  /* Sidebar (Bottom Sheet / Drawer) with iPhone Home Bar Safe-Area */
-  .sidebar {
+  /* Bottom Action Dock on Mobile: Anchors right at bottom, NO dead space */
+  .bottom-action-dock {
     order: 4;
-    width: 100%;
-    height: calc(180px + max(env(safe-area-inset-bottom, 0px), 20px));
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
-    border-right: none;
+    display: block !important;
+    height: calc(60px + max(env(safe-area-inset-bottom, 0px), 8px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
     border-top: 1px solid var(--border-color);
-    background: var(--bg-secondary);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .sidebar-tabs {
-    background: var(--bg-primary);
+    background: #141419;
     flex-shrink: 0;
-  }
-
-  .tab-btn {
-    padding: 6px 2px;
-    font-size: 11px;
-  }
-
-  .sidebar-content {
-    flex: 1;
-    padding: 8px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .dropzone {
-    padding: 10px 8px;
-    border-radius: 8px;
-    background: rgba(0, 229, 255, 0.03);
-  }
-  .dropzone svg {
-    width: 24px;
-    height: 24px;
-    margin-bottom: 2px;
   }
 
   /* Modal on Mobile */
@@ -995,4 +1011,167 @@ input[type="range"]::-webkit-slider-thumb:hover {
     padding: 16px;
     margin-bottom: env(safe-area-inset-bottom, 0px);
   }
+}
+
+
+/* ==========================================================================
+   CapCut Bottom Action Dock & Slide-up Drawers
+   ========================================================================== */
+.bottom-action-dock {
+  background: #141419;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  z-index: 35;
+  width: 100%;
+}
+
+.dock-scroll-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 14px;
+  scrollbar-width: none;
+}
+.dock-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+.dock-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+}
+
+.dock-btn:hover, .dock-btn:active {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dock-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+.dock-btn:active .dock-icon-wrap {
+  transform: scale(0.92);
+}
+
+.icon-video { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.icon-image { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+.icon-audio { background: rgba(45, 212, 191, 0.15); color: #2dd4bf; }
+.icon-text { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.icon-filters { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+.icon-sample { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+/* Slide-up Bottom Drawers */
+.drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.drawer-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dock-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #1c1c24;
+  border-top: 1px solid var(--border-color);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  z-index: 55;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);
+  transform: translateY(100%);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 14px);
+}
+.dock-drawer.open {
+  transform: translateY(0);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.drawer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.drawer-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.drawer-body {
+  padding: 14px 16px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.drawer-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.drawer-preset-btn {
+  background: #272733;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.drawer-preset-btn:active {
+  background: #353545;
+  border-color: var(--accent-cyan);
 }
