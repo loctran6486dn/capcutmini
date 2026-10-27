@@ -62,6 +62,11 @@ class CanvasRenderer {
       video.muted = true; // Audio is handled via AudioMixer or sync
       video.playsInline = true;
       video.preload = 'auto';
+      video.addEventListener('seeked', () => {
+        if (!this.state.isPlaying) {
+          this.renderCurrentFrame();
+        }
+      });
       this.mediaElements.set(mediaId, video);
       return video;
     } else if (mediaItem.type === 'image') {
@@ -176,10 +181,10 @@ class CanvasRenderer {
         ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) grayscale(${grayscale}%) sepia(${sepia}%) blur(${blur}px)`;
 
         if (mediaEl.tagName === 'VIDEO') {
-          // If paused or static frame, seek accurately
+          // If paused or static frame, seek accurately without choking the decoder
           if (!this.state.isPlaying) {
             const targetTime = activeVideoClip.trimStart + (time - activeVideoClip.startTime) * (activeVideoClip.speed || 1.0);
-            if (Math.abs(mediaEl.currentTime - targetTime) > 0.05) {
+            if (!mediaEl.seeking && Math.abs(mediaEl.currentTime - targetTime) > 0.04) {
               mediaEl.currentTime = targetTime;
             }
           }

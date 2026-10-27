@@ -63,7 +63,10 @@ class MediaManagerComponent {
   }
 
   async handleFiles(files) {
-    for (const file of Array.from(files)) {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
+
+    for (const file of fileList) {
       const type = file.type.startsWith('video/')
         ? 'video'
         : file.type.startsWith('audio/')
@@ -96,15 +99,17 @@ class MediaManagerComponent {
 
       this.state.addMedia(mediaItem);
 
-      // Auto add first video/audio to timeline if timeline is empty
+      // Smart aspect ratio detection for the very first video
       if (this.state.tracks.videoTrack.clips.length === 0 && (type === 'video' || type === 'image')) {
-        // Smart aspect ratio detection: if video is vertical, switch to 9:16 automatically!
         if (mediaItem.width && mediaItem.height && mediaItem.height > mediaItem.width) {
           this.state.setAspectRatio('9:16');
           const aspectSelect = document.getElementById('select-aspect-ratio');
           if (aspectSelect) aspectSelect.value = '9:16';
         }
+      }
 
+      // Add EVERY selected video/image directly to Video Track sequentially
+      if (type === 'video' || type === 'image') {
         this.state.addClipToTrack('videoTrack', {
           mediaId: mediaItem.id,
           name: mediaItem.name,
@@ -112,8 +117,19 @@ class MediaManagerComponent {
           duration: mediaItem.duration,
           mediaDuration: mediaItem.duration
         });
+      } else if (type === 'audio') {
+        this.state.addClipToTrack('audioTrack', {
+          mediaId: mediaItem.id,
+          name: mediaItem.name,
+          type: 'audio',
+          duration: mediaItem.duration,
+          mediaDuration: mediaItem.duration
+        });
       }
     }
+
+    // Rewind to 0s so user can preview from the beginning
+    this.state.seek(0);
   }
 
   loadVideoMetadata(mediaItem) {

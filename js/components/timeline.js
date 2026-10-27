@@ -228,27 +228,45 @@ class TimelineComponent {
     const startX = e.touches ? e.touches[0].clientX : e.clientX;
     const initialStartTime = clip.startTime;
     const pps = this.getPixelsPerSecond();
+    const clipEl = document.getElementById(`clip-el-${clip.id}`);
+
+    let latestStartTime = initialStartTime;
+    let rafId = null;
 
     const onMove = (moveEvent) => {
+      if (moveEvent.cancelable) moveEvent.preventDefault();
       const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
       const deltaX = currentX - startX;
       const deltaTime = deltaX / pps;
-      const newStartTime = Math.max(0, initialStartTime + deltaTime);
+      let newStartTime = Math.max(0, initialStartTime + deltaTime);
 
-      let finalStartTime = newStartTime;
-      if (Math.abs(finalStartTime) < 0.1) finalStartTime = 0;
-      if (Math.abs(finalStartTime - this.state.currentTime) < 0.15) {
-        finalStartTime = this.state.currentTime;
+      if (Math.abs(newStartTime) < 0.1) newStartTime = 0;
+      latestStartTime = newStartTime;
+
+      // Ultra-fast direct DOM update (60-120fps ProMotion)
+      if (clipEl) {
+        clipEl.style.left = `${latestStartTime * pps}px`;
       }
 
-      this.state.updateClip(trackType, clip.id, { startTime: finalStartTime });
+      clip.startTime = latestStartTime;
+
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          this.state.seek(latestStartTime, { emit: true });
+        });
+      }
     };
 
     const onEnd = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onEnd);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
+
+      // Commit final state ONCE on finger release (pushHistory only once!)
+      this.state.updateClip(trackType, clip.id, { startTime: latestStartTime });
     };
 
     window.addEventListener('mousemove', onMove);
@@ -265,6 +283,12 @@ class TimelineComponent {
     const initialDuration = clip.duration;
     const initialTrimStart = clip.trimStart || 0;
     const pps = this.getPixelsPerSecond();
+    const clipEl = document.getElementById(`clip-el-${clip.id}`);
+
+    let latestStart = initialStartTime;
+    let latestDuration = initialDuration;
+    let latestTrimStart = initialTrimStart;
+    let rafId = null;
 
     const onMove = (moveEvent) => {
       if (moveEvent.cancelable) moveEvent.preventDefault();
@@ -273,29 +297,48 @@ class TimelineComponent {
       const deltaTime = deltaX / pps;
 
       if (handleType === 'start') {
-        const newStart = Math.max(0, initialStartTime + deltaTime);
-        const diff = newStart - initialStartTime;
-        const newDuration = Math.max(0.2, initialDuration - diff);
-        const newTrimStart = Math.max(0, initialTrimStart + diff);
-
-        this.state.updateClip(trackType, clip.id, {
-          startTime: newStart,
-          duration: newDuration,
-          trimStart: newTrimStart
-        });
+        latestStart = Math.max(0, initialStartTime + deltaTime);
+        const diff = latestStart - initialStartTime;
+        latestDuration = Math.max(0.2, initialDuration - diff);
+        latestTrimStart = Math.max(0, initialTrimStart + diff);
       } else {
-        const newDuration = Math.max(0.2, initialDuration + deltaTime);
-        this.state.updateClip(trackType, clip.id, {
-          duration: newDuration
+        latestDuration = Math.max(0.2, initialDuration + deltaTime);
+      }
+
+      // Ultra-fast direct DOM update (zero lag, 120fps smooth!)
+      if (clipEl) {
+        clipEl.style.left = `${latestStart * pps}px`;
+        clipEl.style.width = `${Math.max(12, latestDuration * pps)}px`;
+      }
+
+      // Update in-memory clip
+      clip.startTime = latestStart;
+      clip.duration = latestDuration;
+      clip.trimStart = latestTrimStart;
+
+      // Throttled frame seek preview
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          const previewTime = handleType === 'start' ? latestStart : (latestStart + latestDuration - 0.05);
+          this.state.seek(previewTime, { emit: true });
         });
       }
     };
 
     const onEnd = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onEnd);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
+
+      // Commit final trimmed values ONCE on release!
+      this.state.updateClip(trackType, clip.id, {
+        startTime: latestStart,
+        duration: latestDuration,
+        trimStart: latestTrimStart
+      });
     };
 
     window.addEventListener('mousemove', onMove);
@@ -306,6 +349,8 @@ class TimelineComponent {
 
   bindPlayheadEvents() {
     if (!this.playheadHead) return;
+
+    let rafId = null;
 
     const startDrag = (e) => {
       e.preventDefault();
@@ -319,10 +364,23 @@ class TimelineComponent {
         const rect = this.tracksContainer.getBoundingClientRect();
         const clientX = currentX - rect.left + this.tracksContainer.scrollLeft;
         const newTime = this.pixelsToTime(clientX);
-        this.state.seek(newTime);
+
+        // Instant playhead needle movement
+        if (this.playhead) {
+          this.playhead.style.left = `${this.timeToPixels(newTime)}px`;
+        }
+
+        // Throttled frame seek
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            this.state.seek(newTime);
+          });
+        }
       };
 
       const onEnd = () => {
+        if (rafId) cancelAnimationFrame(rafId);
         this.isDraggingPlayhead = false;
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onEnd);
