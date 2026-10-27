@@ -116,14 +116,8 @@ class TimelineComponent {
   renderTracks() {
     if (!this.tracksContent) return;
 
-    // Clear tracks content but preserve playhead
-    const playheadHtml = this.playhead ? this.playhead.outerHTML : '';
-    this.tracksContent.innerHTML = playheadHtml;
-    this.playhead = document.getElementById('timeline-playhead');
-    this.playheadHead = document.getElementById('playhead-head');
-    if (this.playheadHead) {
-      this.bindPlayheadEvents();
-    }
+    // Clear tracks content (playhead is now permanently anchored in tracksContainer on the ruler)
+    this.tracksContent.innerHTML = '';
 
     const minWidth = this.timeToPixels(this.state.duration) + 300;
     this.tracksContent.style.width = `${minWidth}px`;
@@ -226,35 +220,100 @@ class TimelineComponent {
   initClipDrag(e, trackType, clip) {
     if (e.type === 'mousedown') e.preventDefault();
     const startX = e.touches ? e.touches[0].clientX : e.clientX;
+    const startY = e.touches ? e.touches[0].clientY : e.clientY;
     const initialStartTime = clip.startTime;
     const pps = this.getPixelsPerSecond();
     const clipEl = document.getElementById(`clip-el-${clip.id}`);
+    if (!clipEl) return;
 
+    const isVideoTrack = (trackType === 'videoTrack');
+    const track = this.state.tracks[trackType];
+
+    let isReordering = false;
+    let targetIndex = track ? track.clips.findIndex(c => c.id === clip.id) : 0;
     let latestStartTime = initialStartTime;
     let rafId = null;
 
+    // Drop indicator element
+    let dropIndicator = document.getElementById('clip-drop-indicator');
+    if (!dropIndicator) {
+      dropIndicator = document.createElement('div');
+      dropIndicator.id = 'clip-drop-indicator';
+      dropIndicator.className = 'clip-drop-indicator';
+      this.tracksContainer.appendChild(dropIndicator);
+    }
+
     const onMove = (moveEvent) => {
-      if (moveEvent.cancelable) moveEvent.preventDefault();
       const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
+      const currentY = moveEvent.touches ? moveEvent.touches[0].clientY : moveEvent.clientY;
       const deltaX = currentX - startX;
-      const deltaTime = deltaX / pps;
-      let newStartTime = Math.max(0, initialStartTime + deltaTime);
+      const deltaY = currentY - startY;
 
-      if (Math.abs(newStartTime) < 0.1) newStartTime = 0;
-      latestStartTime = newStartTime;
-
-      // Ultra-fast direct DOM update (60-120fps ProMotion)
-      if (clipEl) {
-        clipEl.style.left = `${latestStartTime * pps}px`;
+      if (!isReordering) {
+        if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+          isReordering = true;
+          if (isVideoTrack && track && track.clips.length > 1) {
+            clipEl.classList.add('clip-reordering');
+          }
+        }
       }
 
-      clip.startTime = latestStartTime;
+      if (moveEvent.cancelable) moveEvent.preventDefault();
 
-      if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          this.state.seek(latestStartTime, { emit: true });
-        });
+      if (isVideoTrack && track && track.clips.length > 1 && isReordering) {
+        // --- CapCut Mobile Clip Reordering (Collapsed Card Under Fingertip) ---
+        const rect = this.tracksContainer.getBoundingClientRect();
+        const containerX = (currentX - rect.left) + this.tracksContainer.scrollLeft;
+        const cardWidth = 72;
+        clipEl.style.left = `${containerX - cardWidth / 2}px`;
+
+        // Calculate insertion target among other clips
+        const otherClips = track.clips.filter(c => c.id !== clip.id);
+        const fingerTime = this.pixelsToTime(containerX);
+
+        let indicatorTime = 0;
+        if (otherClips.length > 0) {
+          if (fingerTime < (otherClips[0].startTime + otherClips[0].duration * 0.5)) {
+            targetIndex = 0;
+            indicatorTime = otherClips[0].startTime;
+          } else if (fingerTime >= (otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration * 0.5)) {
+            targetIndex = otherClips.length;
+            indicatorTime = otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration;
+          } else {
+            for (let i = 0; i < otherClips.length - 1; i++) {
+              const midA = otherClips[i].startTime + otherClips[i].duration * 0.5;
+              const midB = otherClips[i + 1].startTime + otherClips[i + 1].duration * 0.5;
+              if (fingerTime >= midA && fingerTime < midB) {
+                targetIndex = i + 1;
+                indicatorTime = otherClips[i].startTime + otherClips[i].duration;
+                break;
+              }
+            }
+          }
+        }
+
+        // Show glowing cyan insertion indicator
+        dropIndicator.style.left = `${indicatorTime * pps}px`;
+        dropIndicator.style.display = 'block';
+
+      } else {
+        // Standard dragging for audio / text tracks
+        const deltaTime = deltaX / pps;
+        let newStartTime = Math.max(0, initialStartTime + deltaTime);
+        if (Math.abs(newStartTime) < 0.1) newStartTime = 0;
+        latestStartTime = newStartTime;
+
+        if (clipEl) {
+          clipEl.style.left = `${latestStartTime * pps}px`;
+        }
+        clip.startTime = latestStartTime;
+
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            this.state.seek(latestStartTime, { emit: true });
+          });
+        }
       }
     };
 
@@ -265,8 +324,34 @@ class TimelineComponent {
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
 
-      // Commit final state ONCE on finger release (pushHistory only once!)
-      this.state.updateClip(trackType, clip.id, { startTime: latestStartTime });
+      if (dropIndicator) {
+        dropIndicator.style.display = 'none';
+      }
+      clipEl.classList.remove('clip-reordering');
+
+      if (isVideoTrack && track && track.clips.length > 1 && isReordering) {
+        const originalIndex = track.clips.findIndex(c => c.id === clip.id);
+        if (originalIndex !== -1 && targetIndex !== originalIndex) {
+          // Reorder clips in track
+          const [movedClip] = track.clips.splice(originalIndex, 1);
+          track.clips.splice(targetIndex, 0, movedClip);
+
+          // Magnetic auto-snap & ripple
+          this.state.enforceMagneticTrack('videoTrack');
+          this.state.pushHistory('Chèn đổi thứ tự video');
+          this.state.recalculateDuration();
+          this.state.selectClip(trackType, movedClip.id);
+          this.state.emit('tracks:changed', this.state.tracks);
+          this.state.seek(movedClip.startTime);
+        } else {
+          // Revert position and expand back to full width
+          clipEl.style.left = `${clip.startTime * pps}px`;
+          clipEl.style.width = `${Math.max(12, clip.duration * pps)}px`;
+          this.renderTracks();
+        }
+      } else if (!isVideoTrack && isReordering) {
+        this.state.updateClip(trackType, clip.id, { startTime: latestStartTime });
+      }
     };
 
     window.addEventListener('mousemove', onMove);
@@ -451,14 +536,40 @@ class TimelineComponent {
   }
 
   bindEvents() {
-    // Ruler click seeking
+    // Ruler seeking (Click & Touch Drag)
     if (this.rulerCanvas) {
-      this.rulerCanvas.addEventListener('mousedown', (e) => {
-        const rect = this.rulerCanvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const newTime = this.pixelsToTime(clickX);
+      const handleRulerSeek = (e) => {
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const rect = this.tracksContainer.getBoundingClientRect();
+        const containerX = (clientX - rect.left) + this.tracksContainer.scrollLeft;
+        const newTime = this.pixelsToTime(containerX);
         this.state.seek(newTime);
-      });
+      };
+
+      const startRulerDrag = (e) => {
+        if (e.cancelable) e.preventDefault();
+        handleRulerSeek(e);
+
+        const onMove = (moveEvt) => {
+          if (moveEvt.cancelable) moveEvt.preventDefault();
+          handleRulerSeek(moveEvt);
+        };
+
+        const onEnd = () => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onEnd);
+          window.removeEventListener('touchmove', onMove);
+          window.removeEventListener('touchend', onEnd);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onEnd);
+      };
+
+      this.rulerCanvas.addEventListener('mousedown', startRulerDrag);
+      this.rulerCanvas.addEventListener('touchstart', startRulerDrag, { passive: false });
     }
 
     // Zoom Controls

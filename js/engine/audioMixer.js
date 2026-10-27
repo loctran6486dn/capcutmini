@@ -23,12 +23,35 @@ class AudioMixer {
     });
 
     this.state.on('playback:pause', () => {
+      this.pauseAll();
       this.syncPlayback(false);
     });
 
     this.state.on('seek', () => {
       this.syncPlayback(this.state.isPlaying);
     });
+
+    this.state.on('timeupdate', () => {
+      if (this.state.isPlaying) {
+        this.syncPlayback(true);
+      }
+    });
+
+    // When clips are cut, split, or deleted: IMMEDIATELY silence all audio and re-sync
+    this.state.on('tracks:changed', () => {
+      this.pauseAll();
+      this.syncPlayback(this.state.isPlaying);
+    });
+  }
+
+  pauseAll() {
+    this.audioElements.forEach((audio) => {
+      if (!audio.paused) {
+        audio.pause();
+      }
+    });
+    this.lastActiveAudioClipId = null;
+    this.lastActiveVideoAudioClipId = null;
   }
 
   ensureContext() {

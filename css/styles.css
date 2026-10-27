@@ -384,8 +384,7 @@ body {
   height: 24px;
   background: #141419;
   border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 15;
   cursor: pointer;
 }
@@ -406,14 +405,14 @@ body {
   gap: 6px;
 }
 
-/* Playhead Scrubber */
+/* Playhead Scrubber - Sits on the Ruler at top, needle lines down through all tracks */
 .playhead {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 2px;
   background: var(--playhead-color);
-  z-index: 25;
+  z-index: 35;
   pointer-events: none;
   transform: translateX(-50%);
 }
@@ -423,13 +422,13 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 14px;
-  height: 18px;
+  width: 16px;
+  height: 24px;
   background: var(--playhead-color);
   clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
   cursor: grab;
   pointer-events: auto;
-  box-shadow: 0 2px 6px rgba(0, 240, 255, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 240, 255, 0.7);
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -439,7 +438,7 @@ body {
 .playhead-head::before {
   content: '';
   position: absolute;
-  top: -15px;
+  top: -10px;
   bottom: -25px;
   left: -22px;
   right: -22px;
@@ -449,6 +448,68 @@ body {
 
 .playhead-head:active {
   cursor: grabbing;
+}
+
+/* CapCut Mobile Clip Reordering / Drag-to-Rearrange Animation */
+.timeline-clip.clip-reordering {
+  width: 72px !important;
+  height: 44px !important;
+  opacity: 0.95 !important;
+  z-index: 99 !important;
+  transform: scale(1.08) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 229, 255, 0.85) !important;
+  border: 2px solid #00f0ff !important;
+  border-radius: 8px !important;
+  pointer-events: none !important;
+  transition: none !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.timeline-clip.clip-reordering .clip-handle {
+  display: none !important;
+}
+
+.timeline-clip.clip-reordering .clip-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* Glowing Drop Insertion Indicator between clips */
+.clip-drop-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  background: #00f0ff;
+  border-radius: 2px;
+  box-shadow: 0 0 12px #00f0ff, 0 0 24px rgba(0, 240, 255, 0.8);
+  z-index: 80;
+  pointer-events: none;
+  display: none;
+  transform: translateX(-50%);
+}
+.clip-drop-indicator::before,
+.clip-drop-indicator::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background: #00f0ff;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #00f0ff;
+}
+.clip-drop-indicator::before {
+  top: -4px;
+}
+.clip-drop-indicator::after {
+  bottom: -4px;
 }
 
 /* Track Row */

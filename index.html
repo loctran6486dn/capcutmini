@@ -472,13 +472,13 @@
           <canvas id="ruler-canvas"></canvas>
         </div>
 
-        <!-- Tracks Canvas Content with Playhead -->
-        <div id="tracks-content" class="tracks-content">
-          <!-- Playhead Needle -->
-          <div id="timeline-playhead" class="playhead" style="left: 0px;">
-            <div id="playhead-head" class="playhead-head"></div>
-          </div>
+        <!-- Playhead Needle (Anchored on ruler at top, slicing down across all tracks) -->
+        <div id="timeline-playhead" class="playhead" style="left: 0px;">
+          <div id="playhead-head" class="playhead-head" title="Kéo kim thời gian"></div>
         </div>
+
+        <!-- Tracks Canvas Content -->
+        <div id="tracks-content" class="tracks-content"></div>
       </div>
     </section>
   </div>
