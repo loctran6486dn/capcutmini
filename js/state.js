@@ -131,7 +131,27 @@ class AppState extends EventEmitter {
       });
     });
     this.duration = Math.max(maxEnd, 5); // default min 5s
+    if (this.currentTime > this.duration) {
+      this.seek(this.duration, { emit: true });
+    }
     this.emit('duration:changed', this.duration);
+  }
+
+  // --- CapCut Magnetic Timeline (Auto-Snap / Ripple Edit for Primary Video Track) ---
+  enforceMagneticTrack(trackType = 'videoTrack') {
+    const track = this.tracks[trackType];
+    if (!track || track.clips.length === 0) return;
+
+    // Stable sort chronologically by current startTime
+    track.clips.sort((a, b) => a.startTime - b.startTime);
+
+    // Magnetic ripple: 1st clip begins at 0:00, each subsequent clip snaps flush to preceding clip's end
+    let cursor = 0;
+    for (let i = 0; i < track.clips.length; i++) {
+      const clip = track.clips[i];
+      clip.startTime = cursor;
+      cursor += clip.duration;
+    }
   }
 
   // --- Clip Operations ---
@@ -183,8 +203,13 @@ class AppState extends EventEmitter {
     };
 
     track.clips.push(newClip);
-    // Sort clips chronologically
-    track.clips.sort((a, b) => a.startTime - b.startTime);
+
+    // Primary Video Track enforces magnetic contiguous layout
+    if (trackType === 'videoTrack') {
+      this.enforceMagneticTrack('videoTrack');
+    } else {
+      track.clips.sort((a, b) => a.startTime - b.startTime);
+    }
 
     this.recalculateDuration();
     this.selectClip(trackType, newClip.id);
@@ -201,13 +226,22 @@ class AppState extends EventEmitter {
     this.pushHistory('Chỉnh sửa clip');
     track.clips[clipIndex] = { ...track.clips[clipIndex], ...updates };
     
-    // re-sort if startTime changed
-    if (updates.startTime !== undefined) {
-      track.clips.sort((a, b) => a.startTime - b.startTime);
+    // Primary Video Track enforces magnetic snapping and rippling
+    if (trackType === 'videoTrack') {
+      if (updates.startTime !== undefined) {
+        track.clips.sort((a, b) => a.startTime - b.startTime);
+      }
+      this.enforceMagneticTrack('videoTrack');
+    } else {
+      if (updates.startTime !== undefined) {
+        track.clips.sort((a, b) => a.startTime - b.startTime);
+      }
     }
 
+    const updatedClip = track.clips.find(c => c.id === clipId);
+
     this.recalculateDuration();
-    this.emit('clip:updated', { trackType, clip: track.clips[clipIndex] });
+    this.emit('clip:updated', { trackType, clip: updatedClip });
     this.emit('tracks:changed', this.tracks);
   }
 
@@ -220,6 +254,11 @@ class AppState extends EventEmitter {
     if (this.selectedClip && this.selectedClip.clipId === clipId) {
       this.selectedClip = null;
       this.emit('clip:selected', null);
+    }
+
+    // When deleting any clip (even the very first one), subsequent clips snap to 0:00 or previous clip's end
+    if (trackType === 'videoTrack') {
+      this.enforceMagneticTrack('videoTrack');
     }
 
     this.recalculateDuration();
@@ -276,7 +315,11 @@ class AppState extends EventEmitter {
     clip.duration = splitOffset;
 
     track.clips.push(secondClip);
-    track.clips.sort((a, b) => a.startTime - b.startTime);
+    if (trackType === 'videoTrack') {
+      this.enforceMagneticTrack('videoTrack');
+    } else {
+      track.clips.sort((a, b) => a.startTime - b.startTime);
+    }
 
     this.selectClip(trackType, secondClip.id);
     this.recalculateDuration();
@@ -297,11 +340,15 @@ class AppState extends EventEmitter {
       ...JSON.parse(JSON.stringify(clip)),
       id: 'clip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
       name: clip.name + ' (Copy)',
-      startTime: clip.startTime + clip.duration + 0.1
+      startTime: clip.startTime + clip.duration
     };
 
     track.clips.push(newClip);
-    track.clips.sort((a, b) => a.startTime - b.startTime);
+    if (trackType === 'videoTrack') {
+      this.enforceMagneticTrack('videoTrack');
+    } else {
+      track.clips.sort((a, b) => a.startTime - b.startTime);
+    }
 
     this.selectClip(trackType, newClip.id);
     this.recalculateDuration();

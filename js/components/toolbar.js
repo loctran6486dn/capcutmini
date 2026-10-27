@@ -79,7 +79,17 @@ class ToolbarComponent {
       this.speedSelect.addEventListener('change', (e) => {
         if (this.state.selectedClip) {
           const speed = parseFloat(e.target.value);
-          this.state.updateClip(this.state.selectedClip.trackType, this.state.selectedClip.clipId, { speed });
+          const clip = this.state.getSelectedClip();
+          if (clip && clip.type !== 'text') {
+            const oldSpeed = clip.speed || 1.0;
+            const newDuration = Math.max(0.2, (clip.duration * oldSpeed) / speed);
+            this.state.updateClip(this.state.selectedClip.trackType, this.state.selectedClip.clipId, {
+              speed,
+              duration: newDuration
+            });
+          } else {
+            this.state.updateClip(this.state.selectedClip.trackType, this.state.selectedClip.clipId, { speed });
+          }
         }
       });
     }

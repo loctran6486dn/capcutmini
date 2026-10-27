@@ -282,8 +282,29 @@ class TimelineComponent {
     const initialStartTime = clip.startTime;
     const initialDuration = clip.duration;
     const initialTrimStart = clip.trimStart || 0;
+    const clipSpeed = clip.speed || 1.0;
     const pps = this.getPixelsPerSecond();
     const clipEl = document.getElementById(`clip-el-${clip.id}`);
+
+    const isVideoTrack = (trackType === 'videoTrack');
+    const track = this.state.tracks[trackType];
+    const clipIndex = track ? track.clips.findIndex(c => c.id === clip.id) : -1;
+
+    // Cache subsequent clips for 120fps real-time magnetic ripple
+    const subsequentClips = [];
+    if (isVideoTrack && track && clipIndex !== -1) {
+      for (let i = clipIndex + 1; i < track.clips.length; i++) {
+        const subClip = track.clips[i];
+        const subEl = document.getElementById(`clip-el-${subClip.id}`);
+        if (subEl) {
+          subsequentClips.push({
+            clip: subClip,
+            el: subEl,
+            initialStart: subClip.startTime
+          });
+        }
+      }
+    }
 
     let latestStart = initialStartTime;
     let latestDuration = initialDuration;
@@ -297,18 +318,47 @@ class TimelineComponent {
       const deltaTime = deltaX / pps;
 
       if (handleType === 'start') {
-        latestStart = Math.max(0, initialStartTime + deltaTime);
-        const diff = latestStart - initialStartTime;
-        latestDuration = Math.max(0.2, initialDuration - diff);
-        latestTrimStart = Math.max(0, initialTrimStart + diff);
+        if (isVideoTrack) {
+          // In magnetic video track, trimming start cuts off the beginning while remaining attached
+          const deltaTrimSeconds = deltaTime * clipSpeed;
+          latestTrimStart = Math.max(0, initialTrimStart + deltaTrimSeconds);
+          if (clip.mediaDuration && clip.type !== 'image') {
+            latestTrimStart = Math.min(latestTrimStart, Math.max(0, clip.mediaDuration - 0.2));
+          }
+          const actualDeltaTrim = (latestTrimStart - initialTrimStart) / clipSpeed;
+          latestDuration = Math.max(0.2, initialDuration - actualDeltaTrim);
+          latestStart = initialStartTime;
+        } else {
+          latestStart = Math.max(0, initialStartTime + deltaTime);
+          const diff = latestStart - initialStartTime;
+          latestDuration = Math.max(0.2, initialDuration - diff);
+          latestTrimStart = Math.max(0, initialTrimStart + (diff * clipSpeed));
+        }
       } else {
+        // handleType === 'end'
         latestDuration = Math.max(0.2, initialDuration + deltaTime);
+        if (clip.mediaDuration && clip.type !== 'image') {
+          const maxAvail = (clip.mediaDuration - (clip.trimStart || 0)) / clipSpeed;
+          if (maxAvail > 0.2) {
+            latestDuration = Math.min(latestDuration, maxAvail);
+          }
+        }
+        latestStart = initialStartTime;
       }
 
-      // Ultra-fast direct DOM update (zero lag, 120fps smooth!)
+      // Ultra-fast direct DOM update for current clip (zero lag, 120fps smooth!)
       if (clipEl) {
         clipEl.style.left = `${latestStart * pps}px`;
         clipEl.style.width = `${Math.max(12, latestDuration * pps)}px`;
+      }
+
+      // Real-time magnetic ripple: subsequent clips dynamically slide in sync
+      if (isVideoTrack && subsequentClips.length > 0) {
+        const durationDiff = latestDuration - initialDuration;
+        for (const sub of subsequentClips) {
+          const newSubLeft = (sub.initialStart + durationDiff) * pps;
+          sub.el.style.left = `${newSubLeft}px`;
+        }
       }
 
       // Update in-memory clip
@@ -320,7 +370,9 @@ class TimelineComponent {
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           rafId = null;
-          const previewTime = handleType === 'start' ? latestStart : (latestStart + latestDuration - 0.05);
+          const previewTime = handleType === 'start'
+            ? latestStart
+            : (latestStart + latestDuration - 0.05);
           this.state.seek(previewTime, { emit: true });
         });
       }
