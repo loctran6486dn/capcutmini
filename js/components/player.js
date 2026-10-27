@@ -70,12 +70,14 @@ class PlayerComponent {
     // Play / Pause toggle
     if (this.playBtn) {
       this.playBtn.addEventListener('click', () => {
+        window.app?.renderer?.unlockAudioPlayer();
         this.state.togglePlay();
       });
     }
 
     if (this.canvasWrapper) {
       this.canvasWrapper.addEventListener('click', () => {
+        window.app?.renderer?.unlockAudioPlayer();
         this.state.togglePlay();
       });
     }

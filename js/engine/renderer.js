@@ -10,46 +10,69 @@ class CanvasRenderer {
     this.animationFrameId = null;
     this.lastRenderTime = 0;
 
-    // Cache of HTMLVideoElements / HTMLImageElements
+    // Cache of HTMLVideoElements / HTMLImageElements (visual only, permanently muted)
     this.mediaElements = new Map();
+
+    // Single persistent audio player element for 100% seamless multi-video audio on iOS Safari
+    this.initAudioPlayer();
 
     this.init();
     this.setupGlobalUnlock();
   }
 
+  initAudioPlayer() {
+    this.audioPlayer = document.createElement('video');
+    this.audioPlayer.id = 'capcut-global-audio-player';
+    this.audioPlayer.playsInline = true;
+    this.audioPlayer.setAttribute('playsinline', '');
+    this.audioPlayer.setAttribute('webkit-playsinline', '');
+    this.audioPlayer.muted = false;
+    this.audioPlayer.preload = 'auto';
+
+    // Must be in DOM with slight opacity to ensure iOS WebKit treats it as an active media pipeline
+    this.audioPlayer.style.position = 'fixed';
+    this.audioPlayer.style.top = '-9999px';
+    this.audioPlayer.style.left = '-9999px';
+    this.audioPlayer.style.width = '1px';
+    this.audioPlayer.style.height = '1px';
+    this.audioPlayer.style.opacity = '0.01';
+    this.audioPlayer.style.pointerEvents = 'none';
+    this.audioPlayer.style.zIndex = '-999';
+
+    // Seed with a tiny valid silent WAV data URI so initial user gesture unlocks it cleanly with 0 errors
+    this.audioPlayer.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A';
+    document.body.appendChild(this.audioPlayer);
+
+    this.audioPlayerUnlocked = false;
+    this._currentAudioMediaId = null;
+    this._lastAudioClipId = null;
+  }
+
   setupGlobalUnlock() {
     this._hasUserInteracted = false;
     const unlockHandler = () => {
-      this.unlockAllMedia();
+      this.unlockAudioPlayer();
     };
     window.addEventListener('touchstart', unlockHandler, { passive: true, capture: true });
     window.addEventListener('pointerdown', unlockHandler, { passive: true, capture: true });
     window.addEventListener('click', unlockHandler, { passive: true, capture: true });
   }
 
-  unlockAllMedia() {
+  unlockAudioPlayer() {
     this._hasUserInteracted = true;
-    const videoClips = this.state.tracks.videoTrack.clips;
-    videoClips.forEach(clip => {
-      const el = this.getMediaElement(clip.mediaId);
-      if (el && el.tagName === 'VIDEO' && !el._unlocked) {
-        try {
-          const p = el.play();
-          if (p !== undefined) {
-            p.then(() => {
-              el._unlocked = true;
-              if (!this.state.isPlaying || el !== this.currentActiveEl) {
-                el.pause();
-              }
-            }).catch(() => {
-              el._unlocked = true;
-            });
+    if (!this.audioPlayerUnlocked && this.audioPlayer) {
+      const p = this.audioPlayer.play();
+      if (p !== undefined) {
+        p.then(() => {
+          this.audioPlayerUnlocked = true;
+          if (!this.state.isPlaying) {
+            this.audioPlayer.pause();
           }
-        } catch (e) {
-          el._unlocked = true;
-        }
+        }).catch(() => {
+          this.audioPlayerUnlocked = true;
+        });
       }
-    });
+    }
   }
 
   init() {
@@ -61,23 +84,24 @@ class CanvasRenderer {
     });
 
     this.state.on('seek', () => {
+      if (this.audioPlayer && !this.audioPlayer.paused) {
+        this.audioPlayer.pause();
+      }
       this.renderCurrentFrame();
     });
 
     this.state.on('tracks:changed', () => {
       this.lastActiveClipId = null;
+      this._lastAudioClipId = null;
       this.mediaElements.forEach(el => {
         el._lastRequestedSeekTime = null;
       });
-      if (this._hasUserInteracted) {
-        this.unlockAllMedia();
-      }
       this.syncActiveVideos(this.state.isPlaying);
       this.renderCurrentFrame();
     });
 
     this.state.on('playback:play', () => {
-      this.unlockAllMedia();
+      this.unlockAudioPlayer();
       this.startLoop();
     });
 
@@ -104,7 +128,7 @@ class CanvasRenderer {
       const video = document.createElement('video');
       video.src = mediaItem.url;
       video.crossOrigin = 'anonymous';
-      video.muted = false; // Enabled for native hardware lip-synced audio
+      video.muted = true; // Permanently muted for visual frame rendering (never blocked by iOS Safari)
       video.playsInline = true;
       video.setAttribute('playsinline', '');
       video.setAttribute('webkit-playsinline', '');
@@ -167,6 +191,10 @@ class CanvasRenderer {
       this.animationFrameId = null;
     }
     this.lastActiveClipId = null;
+    this._lastAudioClipId = null;
+    if (this.audioPlayer && !this.audioPlayer.paused) {
+      this.audioPlayer.pause();
+    }
   }
 
   syncActiveVideos(isPlaying) {
@@ -180,23 +208,19 @@ class CanvasRenderer {
     const activeEl = activeClip ? this.getMediaElement(activeClip.mediaId) : null;
     this.currentActiveEl = activeEl;
 
-    // 1. Pause and mute any video element that is NOT currently active
+    // 1. Pause any visual video element that is NOT currently active
     this.mediaElements.forEach((el) => {
-      if (el.tagName === 'VIDEO' && el !== activeEl) {
-        if (!el.paused) el.pause();
-        el.muted = true;
+      if (el.tagName === 'VIDEO' && el !== activeEl && !el.paused) {
+        el.pause();
       }
     });
 
-    // 2. Control the active video element (never pause it if shared across cut clips)
+    // 2. Control the active visual video element (always muted, 0 iOS restrictions)
     if (activeClip && activeEl && activeEl.tagName === 'VIDEO') {
       const clipSpeed = activeClip.speed || 1.0;
       const targetMediaTime = (activeClip.trimStart || 0) + (time - activeClip.startTime) * clipSpeed;
 
-      // Unmute and apply volume to active clip
-      const clipVol = activeClip.volume !== undefined ? activeClip.volume : 1.0;
-      activeEl.volume = Math.max(0, Math.min(1, clipVol));
-      activeEl.muted = (clipVol === 0);
+      activeEl.muted = true; // Visual element is always muted
 
       // When crossing between cut/split clips, immediately jump to clip's target start time
       if (this.lastActiveClipId !== activeClip.id) {
@@ -217,16 +241,7 @@ class CanvasRenderer {
 
       if (isPlaying) {
         if (activeEl.paused) {
-          const playPromise = activeEl.play();
-          if (playPromise !== undefined) {
-            playPromise.catch((err) => {
-              // Graceful fallback: If unmuted play is temporarily blocked by iOS Safari policy,
-              // fallback to muted play so visual frames NEVER freeze on screen!
-              console.warn('Native video audio restricted on iOS, attempting muted fallback:', err);
-              activeEl.muted = true;
-              activeEl.play().catch(() => {});
-            });
-          }
+          activeEl.play().catch(() => {});
         }
       } else {
         if (!activeEl.paused) {
@@ -235,6 +250,94 @@ class CanvasRenderer {
       }
     } else {
       this.lastActiveClipId = null;
+    }
+
+    // 3. Control the single persistent audio player (100% seamless multi-video audio on iOS Safari)
+    this.syncAudioPlayer(activeClip, isPlaying, time);
+  }
+
+  syncAudioPlayer(activeClip, isPlaying, time) {
+    if (!this.audioPlayer) return;
+
+    if (!isPlaying || !activeClip) {
+      if (!this.audioPlayer.paused) {
+        this.audioPlayer.pause();
+      }
+      return;
+    }
+
+    const mediaItem = this.state.getMedia(activeClip.mediaId);
+    if (!mediaItem || mediaItem.type !== 'video') {
+      // Non-video clip (e.g. image): silence video audio player
+      if (!this.audioPlayer.paused) {
+        this.audioPlayer.pause();
+      }
+      this._currentAudioMediaId = null;
+      return;
+    }
+
+    const clipSpeed = activeClip.speed || 1.0;
+    const targetMediaTime = (activeClip.trimStart || 0) + (time - activeClip.startTime) * clipSpeed;
+    const clipVol = activeClip.volume !== undefined ? activeClip.volume : 1.0;
+    const vol = Math.max(0, Math.min(1, clipVol));
+
+    // Check if we need to switch the video source
+    if (this._currentAudioMediaId !== activeClip.mediaId) {
+      this._currentAudioMediaId = activeClip.mediaId;
+      this._lastAudioClipId = activeClip.id;
+
+      this.audioPlayer.src = mediaItem.url;
+      this.audioPlayer.volume = vol;
+      this.audioPlayer.muted = (vol === 0);
+      this.audioPlayer.playbackRate = clipSpeed;
+
+      const onMeta = () => {
+        if (Math.abs(this.audioPlayer.currentTime - targetMediaTime) > 0.05) {
+          this.audioPlayer.currentTime = targetMediaTime;
+        }
+        if (this.state.isPlaying && this.audioPlayer.paused) {
+          const p = this.audioPlayer.play();
+          if (p !== undefined) p.catch(() => {});
+        }
+      };
+
+      if (this.audioPlayer.readyState >= 1) {
+        if (Math.abs(this.audioPlayer.currentTime - targetMediaTime) > 0.05) {
+          this.audioPlayer.currentTime = targetMediaTime;
+        }
+      } else {
+        this.audioPlayer.addEventListener('loadedmetadata', onMeta, { once: true });
+      }
+
+      if (this.state.isPlaying) {
+        const p = this.audioPlayer.play();
+        if (p !== undefined) p.catch(() => {});
+      }
+    } else {
+      // Same video source: handle cuts, splits, drift, speed, and volume
+      if (this.audioPlayer.volume !== vol) {
+        this.audioPlayer.volume = vol;
+      }
+      this.audioPlayer.muted = (vol === 0);
+
+      if (this.audioPlayer.playbackRate !== clipSpeed) {
+        this.audioPlayer.playbackRate = clipSpeed;
+      }
+
+      // If cut/split clip changed, immediately jump to target start time
+      if (this._lastAudioClipId !== activeClip.id) {
+        this._lastAudioClipId = activeClip.id;
+        if (Math.abs(this.audioPlayer.currentTime - targetMediaTime) > 0.05) {
+          this.audioPlayer.currentTime = targetMediaTime;
+        }
+      } else if (Math.abs(this.audioPlayer.currentTime - targetMediaTime) > 0.25) {
+        this.audioPlayer.currentTime = targetMediaTime;
+      }
+
+      if (this.state.isPlaying && this.audioPlayer.paused) {
+        const p = this.audioPlayer.play();
+        if (p !== undefined) p.catch(() => {});
+      }
     }
   }
 

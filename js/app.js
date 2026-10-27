@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const audioMixer = new AudioMixer(state);
   const exporter = new VideoExporter(state, renderer, audioMixer);
 
+  window.app = { state, renderer, audioMixer, exporter };
+
   // 2. Initialize UI Components
   const player = new PlayerComponent(document.querySelector('.preview-stage'), state);
   const timeline = new TimelineComponent(document.querySelector('.timeline-section'), state);
