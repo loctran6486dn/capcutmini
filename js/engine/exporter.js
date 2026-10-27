@@ -97,9 +97,11 @@ class VideoExporter {
           // Restore state
           this.state.seek(originalTime);
           this.isExporting = false;
+          this.audioMixer.isExporting = false;
           resolve({ success: true, blob, extension });
         } catch (err) {
           this.isExporting = false;
+          this.audioMixer.isExporting = false;
           reject(err);
         }
       };
@@ -112,6 +114,7 @@ class VideoExporter {
       const startTime = performance.now();
 
       // Ensure audio context is unmuted and active
+      this.audioMixer.isExporting = true;
       this.audioMixer.ensureContext();
       this.audioMixer.syncPlayback(true);
 
@@ -153,6 +156,7 @@ class VideoExporter {
   cancelExport() {
     if (this.isExporting && this.mediaRecorder) {
       this.isExporting = false;
+      this.audioMixer.isExporting = false;
       this.mediaRecorder.stop();
     }
   }

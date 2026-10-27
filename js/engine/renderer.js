@@ -14,6 +14,42 @@ class CanvasRenderer {
     this.mediaElements = new Map();
 
     this.init();
+    this.setupGlobalUnlock();
+  }
+
+  setupGlobalUnlock() {
+    this._hasUserInteracted = false;
+    const unlockHandler = () => {
+      this.unlockAllMedia();
+    };
+    window.addEventListener('touchstart', unlockHandler, { passive: true, capture: true });
+    window.addEventListener('pointerdown', unlockHandler, { passive: true, capture: true });
+    window.addEventListener('click', unlockHandler, { passive: true, capture: true });
+  }
+
+  unlockAllMedia() {
+    this._hasUserInteracted = true;
+    const videoClips = this.state.tracks.videoTrack.clips;
+    videoClips.forEach(clip => {
+      const el = this.getMediaElement(clip.mediaId);
+      if (el && el.tagName === 'VIDEO' && !el._unlocked) {
+        try {
+          const p = el.play();
+          if (p !== undefined) {
+            p.then(() => {
+              el._unlocked = true;
+              if (!this.state.isPlaying || el !== this.currentActiveEl) {
+                el.pause();
+              }
+            }).catch(() => {
+              el._unlocked = true;
+            });
+          }
+        } catch (e) {
+          el._unlocked = true;
+        }
+      }
+    });
   }
 
   init() {
@@ -33,10 +69,15 @@ class CanvasRenderer {
       this.mediaElements.forEach(el => {
         el._lastRequestedSeekTime = null;
       });
+      if (this._hasUserInteracted) {
+        this.unlockAllMedia();
+      }
+      this.syncActiveVideos(this.state.isPlaying);
       this.renderCurrentFrame();
     });
 
     this.state.on('playback:play', () => {
+      this.unlockAllMedia();
       this.startLoop();
     });
 
@@ -63,8 +104,10 @@ class CanvasRenderer {
       const video = document.createElement('video');
       video.src = mediaItem.url;
       video.crossOrigin = 'anonymous';
-      video.muted = true; // Audio is handled via AudioMixer or sync
+      video.muted = false; // Enabled for native hardware lip-synced audio
       video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
       video.preload = 'auto';
       video.addEventListener('seeked', () => {
         if (!this.state.isPlaying) {
@@ -135,11 +178,13 @@ class CanvasRenderer {
       c => time >= c.startTime && time < (c.startTime + c.duration)
     );
     const activeEl = activeClip ? this.getMediaElement(activeClip.mediaId) : null;
+    this.currentActiveEl = activeEl;
 
-    // 1. Pause any video element that is NOT currently active
+    // 1. Pause and mute any video element that is NOT currently active
     this.mediaElements.forEach((el) => {
-      if (el.tagName === 'VIDEO' && el !== activeEl && !el.paused) {
-        el.pause();
+      if (el.tagName === 'VIDEO' && el !== activeEl) {
+        if (!el.paused) el.pause();
+        el.muted = true;
       }
     });
 
@@ -147,6 +192,11 @@ class CanvasRenderer {
     if (activeClip && activeEl && activeEl.tagName === 'VIDEO') {
       const clipSpeed = activeClip.speed || 1.0;
       const targetMediaTime = (activeClip.trimStart || 0) + (time - activeClip.startTime) * clipSpeed;
+
+      // Unmute and apply volume to active clip
+      const clipVol = activeClip.volume !== undefined ? activeClip.volume : 1.0;
+      activeEl.volume = Math.max(0, Math.min(1, clipVol));
+      activeEl.muted = (clipVol === 0);
 
       // When crossing between cut/split clips, immediately jump to clip's target start time
       if (this.lastActiveClipId !== activeClip.id) {
@@ -167,7 +217,16 @@ class CanvasRenderer {
 
       if (isPlaying) {
         if (activeEl.paused) {
-          activeEl.play().catch(() => {});
+          const playPromise = activeEl.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+              // Graceful fallback: If unmuted play is temporarily blocked by iOS Safari policy,
+              // fallback to muted play so visual frames NEVER freeze on screen!
+              console.warn('Native video audio restricted on iOS, attempting muted fallback:', err);
+              activeEl.muted = true;
+              activeEl.play().catch(() => {});
+            });
+          }
         }
       } else {
         if (!activeEl.paused) {

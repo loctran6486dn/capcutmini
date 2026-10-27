@@ -57,17 +57,22 @@ class TimelineComponent {
     }
   }
 
-  drawRuler() {
+  drawRuler(customPps = null) {
     if (!this.rulerCanvas || !this.rulerCtx) return;
 
+    const pps = customPps || this.getPixelsPerSecond();
     const width = Math.max(
-      this.tracksContainer.clientWidth,
-      this.timeToPixels(this.state.duration) + 300
+      this.tracksContainer ? this.tracksContainer.clientWidth : 0,
+      (this.state.duration * pps) + 300
     );
     const height = 24;
 
-    this.rulerCanvas.width = width;
-    this.rulerCanvas.height = height;
+    if (this.rulerCanvas.width !== width) {
+      this.rulerCanvas.width = width;
+    }
+    if (this.rulerCanvas.height !== height) {
+      this.rulerCanvas.height = height;
+    }
 
     const ctx = this.rulerCtx;
     ctx.clearRect(0, 0, width, height);
@@ -79,7 +84,6 @@ class TimelineComponent {
     ctx.font = '10px -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
-    const pps = this.getPixelsPerSecond();
     let secondStep = 1;
     if (pps < 20) secondStep = 10;
     else if (pps < 40) secondStep = 5;
@@ -111,6 +115,39 @@ class TimelineComponent {
         ctx.lineTo(x, height);
         ctx.stroke();
       }
+    }
+  }
+
+  applyLiveZoom(zoom) {
+    const pps = Math.max(15, Math.min(220, zoom));
+    // 1. Update tracks content width
+    const minWidth = Math.max(
+      this.tracksContainer ? this.tracksContainer.clientWidth : 0,
+      (this.state.duration * pps) + 300
+    );
+    if (this.tracksContent) {
+      this.tracksContent.style.width = `${minWidth}px`;
+    }
+
+    // 2. Reposition existing clips without rebuilding DOM
+    if (this.tracksContent) {
+      const clipEls = this.tracksContent.querySelectorAll('.timeline-clip');
+      clipEls.forEach(clipEl => {
+        const startTime = parseFloat(clipEl.dataset.startTime);
+        const duration = parseFloat(clipEl.dataset.duration);
+        if (!isNaN(startTime) && !isNaN(duration)) {
+          clipEl.style.left = `${startTime * pps}px`;
+          clipEl.style.width = `${Math.max(12, duration * pps)}px`;
+        }
+      });
+    }
+
+    // 3. Redraw ruler with new pps
+    this.drawRuler(pps);
+
+    // 4. Update playhead position
+    if (this.playhead) {
+      this.playhead.style.left = `${this.state.currentTime * pps}px`;
     }
   }
 
@@ -161,6 +198,10 @@ class TimelineComponent {
 
     clipEl.className = `timeline-clip ${clip.type}-clip ${isSelected ? 'selected' : ''}`;
     clipEl.id = `clip-el-${clip.id}`;
+    clipEl.dataset.startTime = clip.startTime;
+    clipEl.dataset.duration = clip.duration;
+    clipEl.dataset.trackType = trackType;
+    clipEl.dataset.clipId = clip.id;
     clipEl.style.left = `${clip.startTime * pps}px`;
     clipEl.style.width = `${Math.max(12, clip.duration * pps)}px`;
 
@@ -414,9 +455,13 @@ class TimelineComponent {
     let initialZoom = this.state.zoom;
     let anchorTime = 0;
     let anchorClientX = 0;
+    let isPinching = false;
+    let pendingZoom = null;
+    let pinchRafId = null;
 
     const onTouchStart = (e) => {
       if (e.touches.length === 2) {
+        isPinching = true;
         initialDist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
@@ -437,20 +482,42 @@ class TimelineComponent {
           e.touches[0].clientY - e.touches[1].clientY
         );
         const scale = currentDist / initialDist;
-        const newZoom = Math.max(15, Math.min(220, Math.round(initialZoom * scale)));
-        if (newZoom !== this.state.zoom) {
-          this.state.setZoom(newZoom);
-          if (this.zoomSlider) this.zoomSlider.value = newZoom;
-          // Keep the point under fingers anchored in view
-          const newMidPx = this.timeToPixels(anchorTime);
-          this.tracksContainer.scrollLeft = Math.max(0, newMidPx - anchorClientX);
+        const targetZoom = Math.max(15, Math.min(220, Math.round(initialZoom * scale)));
+
+        if (targetZoom !== pendingZoom) {
+          pendingZoom = targetZoom;
+
+          if (!pinchRafId) {
+            pinchRafId = requestAnimationFrame(() => {
+              pinchRafId = null;
+              if (pendingZoom !== null) {
+                this.applyLiveZoom(pendingZoom);
+                if (this.zoomSlider) this.zoomSlider.value = pendingZoom;
+                // Keep the point under fingers anchored in view
+                const newMidPx = anchorTime * pendingZoom;
+                this.tracksContainer.scrollLeft = Math.max(0, newMidPx - anchorClientX);
+              }
+            });
+          }
         }
       }
     };
 
     const onTouchEnd = (e) => {
-      if (e.touches.length < 2) {
+      if (e.touches.length < 2 && isPinching) {
+        isPinching = false;
         initialDist = 0;
+        if (pinchRafId) {
+          cancelAnimationFrame(pinchRafId);
+          pinchRafId = null;
+        }
+        if (pendingZoom !== null) {
+          const finalZoom = pendingZoom;
+          pendingZoom = null;
+          if (finalZoom !== this.state.zoom) {
+            this.state.setZoom(finalZoom);
+          }
+        }
       }
     };
 
@@ -460,13 +527,19 @@ class TimelineComponent {
     this.tracksContainer.addEventListener('touchcancel', onTouchEnd);
 
     // Trackpad pinch-to-zoom on Mac
+    let wheelPinchTimeout = null;
     this.tracksContainer.addEventListener('wheel', (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const zoomDelta = -e.deltaY * 0.4;
         const newZoom = Math.max(15, Math.min(220, Math.round(this.state.zoom + zoomDelta)));
-        this.state.setZoom(newZoom);
+        this.applyLiveZoom(newZoom);
         if (this.zoomSlider) this.zoomSlider.value = newZoom;
+
+        clearTimeout(wheelPinchTimeout);
+        wheelPinchTimeout = setTimeout(() => {
+          this.state.setZoom(newZoom);
+        }, 100);
       }
     }, { passive: false });
   }
@@ -685,7 +758,17 @@ class TimelineComponent {
 
     // Zoom Controls
     if (this.zoomSlider) {
+      let sliderRafId = null;
       this.zoomSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!sliderRafId) {
+          sliderRafId = requestAnimationFrame(() => {
+            sliderRafId = null;
+            this.applyLiveZoom(val);
+          });
+        }
+      });
+      this.zoomSlider.addEventListener('change', (e) => {
         this.state.setZoom(parseFloat(e.target.value));
       });
     }
@@ -693,14 +776,12 @@ class TimelineComponent {
     if (this.zoomInBtn) {
       this.zoomInBtn.addEventListener('click', () => {
         this.state.setZoom(this.state.zoom + 15);
-        if (this.zoomSlider) this.zoomSlider.value = this.state.zoom;
       });
     }
 
     if (this.zoomOutBtn) {
       this.zoomOutBtn.addEventListener('click', () => {
         this.state.setZoom(this.state.zoom - 15);
-        if (this.zoomSlider) this.zoomSlider.value = this.state.zoom;
       });
     }
 
@@ -709,7 +790,12 @@ class TimelineComponent {
     this.state.on('timeupdate', () => this.updatePlayheadPosition());
     this.state.on('tracks:changed', () => this.render());
     this.state.on('duration:changed', () => this.render());
-    this.state.on('zoom:changed', () => this.render());
+    this.state.on('zoom:changed', (zoom) => {
+      if (this.zoomSlider && parseFloat(this.zoomSlider.value) !== zoom) {
+        this.zoomSlider.value = zoom;
+      }
+      this.render();
+    });
     this.state.on('clip:selected', () => this.updateClipSelectionHighlight());
 
     this.bindPlayheadEvents();

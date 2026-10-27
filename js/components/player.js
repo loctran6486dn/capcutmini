@@ -74,6 +74,12 @@ class PlayerComponent {
       });
     }
 
+    if (this.canvasWrapper) {
+      this.canvasWrapper.addEventListener('click', () => {
+        this.state.togglePlay();
+      });
+    }
+
     this.state.on('playback:play', () => {
       if (this.playBtn) {
         this.playBtn.innerHTML = `

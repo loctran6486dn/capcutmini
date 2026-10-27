@@ -8,6 +8,7 @@ class AudioMixer {
     this.audioCtx = null;
     this.masterGain = null;
     this.streamDestination = null;
+    this.isExporting = false;
 
     // Cache of audio elements
     this.audioElements = new Map();
@@ -146,51 +147,62 @@ class AudioMixer {
       this.lastActiveAudioClipId = null;
     }
 
-    // 2. Sync Video Track Sound
-    const videoClips = this.state.tracks.videoTrack.clips;
-    const activeVideoClip = videoClips.find(
-      c => time >= c.startTime && time < (c.startTime + c.duration)
-    );
-    const activeVideoAudioEl = (activeVideoClip && this.state.getMedia(activeVideoClip.mediaId)?.type === 'video')
-      ? this.getAudioElement(activeVideoClip.mediaId, 'video')
-      : null;
+    // 2. Sync Video Track Sound ONLY during project export
+    // During live preview, CanvasRenderer native <video> elements play audio directly with 100% hardware A/V sync
+    if (this.isExporting) {
+      const videoClips = this.state.tracks.videoTrack.clips;
+      const activeVideoClip = videoClips.find(
+        c => time >= c.startTime && time < (c.startTime + c.duration)
+      );
+      const activeVideoAudioEl = (activeVideoClip && this.state.getMedia(activeVideoClip.mediaId)?.type === 'video')
+        ? this.getAudioElement(activeVideoClip.mediaId, 'video')
+        : null;
 
-    // Pause non-active video sound audios
-    this.audioElements.forEach((audio, key) => {
-      if (key.startsWith('video_') && audio !== activeVideoAudioEl && !audio.paused) {
-        audio.pause();
-      }
-    });
+      // Pause non-active video sound audios
+      this.audioElements.forEach((audio, key) => {
+        if (key.startsWith('video_') && audio !== activeVideoAudioEl && !audio.paused) {
+          audio.pause();
+        }
+      });
 
-    if (activeVideoClip && activeVideoAudioEl) {
-      const clipSpeed = activeVideoClip.speed || 1.0;
-      const targetMediaTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
+      if (activeVideoClip && activeVideoAudioEl) {
+        const clipSpeed = activeVideoClip.speed || 1.0;
+        const targetMediaTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
 
-      if (this.lastActiveVideoAudioClipId !== activeVideoClip.id) {
-        this.lastActiveVideoAudioClipId = activeVideoClip.id;
-        activeVideoAudioEl.currentTime = targetMediaTime;
-      } else if (Math.abs(activeVideoAudioEl.currentTime - targetMediaTime) > 0.25) {
-        activeVideoAudioEl.currentTime = targetMediaTime;
-      }
+        if (this.lastActiveVideoAudioClipId !== activeVideoClip.id) {
+          this.lastActiveVideoAudioClipId = activeVideoClip.id;
+          activeVideoAudioEl.currentTime = targetMediaTime;
+        } else if (Math.abs(activeVideoAudioEl.currentTime - targetMediaTime) > 0.25) {
+          activeVideoAudioEl.currentTime = targetMediaTime;
+        }
 
-      activeVideoAudioEl.playbackRate = clipSpeed;
-      const vol = activeVideoClip.volume !== undefined ? activeVideoClip.volume : 1.0;
-      if (activeVideoAudioEl._gainNode) {
-        activeVideoAudioEl._gainNode.gain.value = vol;
-      } else {
-        activeVideoAudioEl.volume = vol;
-      }
+        activeVideoAudioEl.playbackRate = clipSpeed;
+        const vol = activeVideoClip.volume !== undefined ? activeVideoClip.volume : 1.0;
+        if (activeVideoAudioEl._gainNode) {
+          activeVideoAudioEl._gainNode.gain.value = vol;
+        } else {
+          activeVideoAudioEl.volume = vol;
+        }
 
-      if (isPlaying) {
-        if (activeVideoAudioEl.paused) {
-          activeVideoAudioEl.play().catch(() => {});
+        if (isPlaying) {
+          if (activeVideoAudioEl.paused) {
+            activeVideoAudioEl.play().catch(() => {});
+          }
+        } else {
+          if (!activeVideoAudioEl.paused) {
+            activeVideoAudioEl.pause();
+          }
         }
       } else {
-        if (!activeVideoAudioEl.paused) {
-          activeVideoAudioEl.pause();
-        }
+        this.lastActiveVideoAudioClipId = null;
       }
     } else {
+      // Live preview: ensure any export audio elements are silenced
+      this.audioElements.forEach((audio, key) => {
+        if (key.startsWith('video_') && !audio.paused) {
+          audio.pause();
+        }
+      });
       this.lastActiveVideoAudioClipId = null;
     }
   }
