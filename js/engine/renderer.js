@@ -90,7 +90,10 @@ class CanvasRenderer {
       const elapsed = (timestamp - this.lastTimestamp) / 1000;
       this.lastTimestamp = timestamp;
 
-      const newTime = this.state.currentTime + elapsed;
+      // Cap delta time to prevent large jumps (e.g. after tab blur)
+      const clampedElapsed = Math.min(elapsed, 0.1);
+      const newTime = this.state.currentTime + clampedElapsed;
+
       if (newTime >= this.state.duration) {
         this.state.seek(this.state.duration);
         this.state.pause();
@@ -100,8 +103,10 @@ class CanvasRenderer {
 
       this.state.seek(newTime, { emit: false });
       this.state.emit('timeupdate', newTime);
-      this.renderCurrentFrame();
+
+      // Sync active videos BEFORE drawing current frame
       this.syncActiveVideos(true);
+      this.renderCurrentFrame();
 
       this.animationFrameId = requestAnimationFrame(loop);
     };
@@ -114,36 +119,60 @@ class CanvasRenderer {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    this.lastActiveClipId = null;
   }
 
   syncActiveVideos(isPlaying) {
     const time = this.state.currentTime;
     const videoClips = this.state.tracks.videoTrack.clips;
 
-    videoClips.forEach(clip => {
-      const el = this.getMediaElement(clip.mediaId);
-      if (!el || el.tagName !== 'VIDEO') return;
+    // Identify the single active clip at current timestamp
+    const activeClip = videoClips.find(
+      c => time >= c.startTime && time < (c.startTime + c.duration)
+    );
+    const activeEl = activeClip ? this.getMediaElement(activeClip.mediaId) : null;
 
-      const isInside = time >= clip.startTime && time < (clip.startTime + clip.duration);
-
-      if (isInside) {
-        const targetMediaTime = clip.trimStart + (time - clip.startTime) * (clip.speed || 1.0);
-        // Only seek if drift > 0.15s to keep smooth playback
-        if (Math.abs(el.currentTime - targetMediaTime) > 0.15) {
-          el.currentTime = targetMediaTime;
-        }
-        el.playbackRate = clip.speed || 1.0;
-        if (isPlaying && el.paused) {
-          el.play().catch(() => {});
-        } else if (!isPlaying && !el.paused) {
-          el.pause();
-        }
-      } else {
-        if (!el.paused) {
-          el.pause();
-        }
+    // 1. Pause any video element that is NOT currently active
+    this.mediaElements.forEach((el) => {
+      if (el.tagName === 'VIDEO' && el !== activeEl && !el.paused) {
+        el.pause();
       }
     });
+
+    // 2. Control the active video element (never pause it if shared across cut clips)
+    if (activeClip && activeEl && activeEl.tagName === 'VIDEO') {
+      const clipSpeed = activeClip.speed || 1.0;
+      const targetMediaTime = (activeClip.trimStart || 0) + (time - activeClip.startTime) * clipSpeed;
+
+      // When crossing between cut/split clips, immediately jump to clip's target start time
+      if (this.lastActiveClipId !== activeClip.id) {
+        this.lastActiveClipId = activeClip.id;
+        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.05) {
+          activeEl.currentTime = targetMediaTime;
+        }
+      } else {
+        // Continuous playback within same clip: only sync if drift is substantial (> 0.25s)
+        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.25) {
+          activeEl.currentTime = targetMediaTime;
+        }
+      }
+
+      if (activeEl.playbackRate !== clipSpeed) {
+        activeEl.playbackRate = clipSpeed;
+      }
+
+      if (isPlaying) {
+        if (activeEl.paused) {
+          activeEl.play().catch(() => {});
+        }
+      } else {
+        if (!activeEl.paused) {
+          activeEl.pause();
+        }
+      }
+    } else {
+      this.lastActiveClipId = null;
+    }
   }
 
   renderCurrentFrame() {
@@ -169,7 +198,8 @@ class CanvasRenderer {
       if (mediaEl) {
         ctx.save();
 
-        // Apply filters
+        // Optimized filter application: ONLY use ctx.filter if any property is non-default
+        // Bypassing filter saves significant CoreImage / GPU rendering overhead on iOS
         const f = activeVideoClip.filters || {};
         const brightness = f.brightness !== undefined ? f.brightness : 100;
         const contrast = f.contrast !== undefined ? f.contrast : 100;
@@ -178,12 +208,18 @@ class CanvasRenderer {
         const sepia = f.sepia !== undefined ? f.sepia : 0;
         const blur = f.blur !== undefined ? f.blur : 0;
 
-        ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) grayscale(${grayscale}%) sepia(${sepia}%) blur(${blur}px)`;
+        const hasFilter = (brightness !== 100 || contrast !== 100 || saturate !== 100 || grayscale !== 0 || sepia !== 0 || blur !== 0);
+        if (hasFilter) {
+          ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) grayscale(${grayscale}%) sepia(${sepia}%) blur(${blur}px)`;
+        } else {
+          ctx.filter = 'none';
+        }
 
         if (mediaEl.tagName === 'VIDEO') {
           // If paused or static frame, seek accurately without choking the decoder
           if (!this.state.isPlaying) {
-            const targetTime = activeVideoClip.trimStart + (time - activeVideoClip.startTime) * (activeVideoClip.speed || 1.0);
+            const clipSpeed = activeVideoClip.speed || 1.0;
+            const targetTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
             if (!mediaEl.seeking && Math.abs(mediaEl.currentTime - targetTime) > 0.04) {
               mediaEl.currentTime = targetTime;
             }

@@ -82,69 +82,94 @@ class AudioMixer {
 
     // 1. Sync Audio Track Clips (BGM)
     const audioClips = this.state.tracks.audioTrack.clips;
-    audioClips.forEach(clip => {
-      const audio = this.getAudioElement(clip.mediaId, 'audio');
-      if (!audio) return;
+    const activeAudioClip = audioClips.find(
+      c => time >= c.startTime && time < (c.startTime + c.duration)
+    );
+    const activeAudioEl = activeAudioClip ? this.getAudioElement(activeAudioClip.mediaId, 'audio') : null;
 
-      const isInside = time >= clip.startTime && time < (clip.startTime + clip.duration);
-      if (isInside) {
-        const targetMediaTime = clip.trimStart + (time - clip.startTime);
-        if (Math.abs(audio.currentTime - targetMediaTime) > 0.2) {
-          audio.currentTime = targetMediaTime;
-        }
-        if (audio._gainNode) {
-          audio._gainNode.gain.value = clip.volume !== undefined ? clip.volume : 1.0;
-        } else {
-          audio.volume = clip.volume !== undefined ? clip.volume : 1.0;
-        }
-
-        if (isPlaying && audio.paused) {
-          audio.play().catch(() => {});
-        } else if (!isPlaying && !audio.paused) {
-          audio.pause();
-        }
-      } else {
-        if (!audio.paused) {
-          audio.pause();
-        }
+    // Pause non-active BGM audios
+    this.audioElements.forEach((audio, key) => {
+      if (key.startsWith('audio_') && audio !== activeAudioEl && !audio.paused) {
+        audio.pause();
       }
     });
 
-    // 2. Sync Video Sound
+    if (activeAudioClip && activeAudioEl) {
+      const targetMediaTime = (activeAudioClip.trimStart || 0) + (time - activeAudioClip.startTime);
+      if (this.lastActiveAudioClipId !== activeAudioClip.id) {
+        this.lastActiveAudioClipId = activeAudioClip.id;
+        activeAudioEl.currentTime = targetMediaTime;
+      } else if (Math.abs(activeAudioEl.currentTime - targetMediaTime) > 0.25) {
+        activeAudioEl.currentTime = targetMediaTime;
+      }
+
+      const vol = activeAudioClip.volume !== undefined ? activeAudioClip.volume : 1.0;
+      if (activeAudioEl._gainNode) {
+        activeAudioEl._gainNode.gain.value = vol;
+      } else {
+        activeAudioEl.volume = vol;
+      }
+
+      if (isPlaying) {
+        if (activeAudioEl.paused) {
+          activeAudioEl.play().catch(() => {});
+        }
+      } else {
+        if (!activeAudioEl.paused) {
+          activeAudioEl.pause();
+        }
+      }
+    } else {
+      this.lastActiveAudioClipId = null;
+    }
+
+    // 2. Sync Video Track Sound
     const videoClips = this.state.tracks.videoTrack.clips;
-    videoClips.forEach(clip => {
-      // If video has sound, manage its audio element
-      const mediaItem = this.state.getMedia(clip.mediaId);
-      if (!mediaItem || mediaItem.type !== 'video') return;
+    const activeVideoClip = videoClips.find(
+      c => time >= c.startTime && time < (c.startTime + c.duration)
+    );
+    const activeVideoAudioEl = (activeVideoClip && this.state.getMedia(activeVideoClip.mediaId)?.type === 'video')
+      ? this.getAudioElement(activeVideoClip.mediaId, 'video')
+      : null;
 
-      const audio = this.getAudioElement(clip.mediaId, 'video');
-      if (!audio) return;
-
-      const isInside = time >= clip.startTime && time < (clip.startTime + clip.duration);
-      if (isInside) {
-        const targetMediaTime = clip.trimStart + (time - clip.startTime) * (clip.speed || 1.0);
-        if (Math.abs(audio.currentTime - targetMediaTime) > 0.2) {
-          audio.currentTime = targetMediaTime;
-        }
-        audio.playbackRate = clip.speed || 1.0;
-        const vol = clip.volume !== undefined ? clip.volume : 1.0;
-        if (audio._gainNode) {
-          audio._gainNode.gain.value = vol;
-        } else {
-          audio.volume = vol;
-        }
-
-        if (isPlaying && audio.paused) {
-          audio.play().catch(() => {});
-        } else if (!isPlaying && !audio.paused) {
-          audio.pause();
-        }
-      } else {
-        if (!audio.paused) {
-          audio.pause();
-        }
+    // Pause non-active video sound audios
+    this.audioElements.forEach((audio, key) => {
+      if (key.startsWith('video_') && audio !== activeVideoAudioEl && !audio.paused) {
+        audio.pause();
       }
     });
+
+    if (activeVideoClip && activeVideoAudioEl) {
+      const clipSpeed = activeVideoClip.speed || 1.0;
+      const targetMediaTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
+
+      if (this.lastActiveVideoAudioClipId !== activeVideoClip.id) {
+        this.lastActiveVideoAudioClipId = activeVideoClip.id;
+        activeVideoAudioEl.currentTime = targetMediaTime;
+      } else if (Math.abs(activeVideoAudioEl.currentTime - targetMediaTime) > 0.25) {
+        activeVideoAudioEl.currentTime = targetMediaTime;
+      }
+
+      activeVideoAudioEl.playbackRate = clipSpeed;
+      const vol = activeVideoClip.volume !== undefined ? activeVideoClip.volume : 1.0;
+      if (activeVideoAudioEl._gainNode) {
+        activeVideoAudioEl._gainNode.gain.value = vol;
+      } else {
+        activeVideoAudioEl.volume = vol;
+      }
+
+      if (isPlaying) {
+        if (activeVideoAudioEl.paused) {
+          activeVideoAudioEl.play().catch(() => {});
+        }
+      } else {
+        if (!activeVideoAudioEl.paused) {
+          activeVideoAudioEl.pause();
+        }
+      }
+    } else {
+      this.lastActiveVideoAudioClipId = null;
+    }
   }
 
   getAudioDestinationStream() {
