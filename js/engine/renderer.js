@@ -29,6 +29,10 @@ class CanvasRenderer {
     });
 
     this.state.on('tracks:changed', () => {
+      this.lastActiveClipId = null;
+      this.mediaElements.forEach(el => {
+        el._lastRequestedSeekTime = null;
+      });
       this.renderCurrentFrame();
     });
 
@@ -64,7 +68,7 @@ class CanvasRenderer {
       video.preload = 'auto';
       video.addEventListener('seeked', () => {
         if (!this.state.isPlaying) {
-          this.renderCurrentFrame();
+          this.drawFrameImmediate(this.state.currentTime);
         }
       });
       this.mediaElements.set(mediaId, video);
@@ -175,11 +179,15 @@ class CanvasRenderer {
     }
   }
 
-  renderCurrentFrame() {
-    this.renderFrame(this.state.currentTime, this.canvas, this.ctx);
+  drawFrameImmediate(time) {
+    this.renderFrame(time, this.canvas, this.ctx, { allowSeek: false });
   }
 
-  renderFrame(time, canvas, ctx) {
+  renderCurrentFrame() {
+    this.renderFrame(this.state.currentTime, this.canvas, this.ctx, { allowSeek: true });
+  }
+
+  renderFrame(time, canvas, ctx, options = { allowSeek: true }) {
     const width = canvas.width;
     const height = canvas.height;
 
@@ -217,10 +225,12 @@ class CanvasRenderer {
 
         if (mediaEl.tagName === 'VIDEO') {
           // If paused or static frame, seek accurately without choking the decoder
-          if (!this.state.isPlaying) {
+          if (!this.state.isPlaying && options.allowSeek) {
             const clipSpeed = activeVideoClip.speed || 1.0;
             const targetTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
-            if (!mediaEl.seeking && Math.abs(mediaEl.currentTime - targetTime) > 0.04) {
+            // Prevent recursive seek loop by checking if targetTime is different from previous request
+            if (!mediaEl.seeking && mediaEl._lastRequestedSeekTime !== targetTime && Math.abs(mediaEl.currentTime - targetTime) > 0.05) {
+              mediaEl._lastRequestedSeekTime = targetTime;
               mediaEl.currentTime = targetTime;
             }
           }

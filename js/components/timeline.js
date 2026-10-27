@@ -26,6 +26,7 @@ class TimelineComponent {
 
   init() {
     this.bindEvents();
+    this.initPinchToZoom();
     this.render();
   }
 
@@ -234,6 +235,11 @@ class TimelineComponent {
     let latestStartTime = initialStartTime;
     let rafId = null;
 
+    // Edge auto-scroll variables
+    let autoScrollRaf = null;
+    let autoScrollSpeed = 0;
+    let lastClientX = startX;
+
     // Drop indicator element
     let dropIndicator = document.getElementById('clip-drop-indicator');
     if (!dropIndicator) {
@@ -242,6 +248,79 @@ class TimelineComponent {
       dropIndicator.className = 'clip-drop-indicator';
       this.tracksContainer.appendChild(dropIndicator);
     }
+
+    const performAutoScroll = () => {
+      if (autoScrollSpeed !== 0 && this.tracksContainer) {
+        this.tracksContainer.scrollLeft += autoScrollSpeed;
+        updateReorderUI(lastClientX);
+      }
+      autoScrollRaf = requestAnimationFrame(performAutoScroll);
+    };
+
+    const startAutoScroll = () => {
+      if (!autoScrollRaf) {
+        autoScrollRaf = requestAnimationFrame(performAutoScroll);
+      }
+    };
+
+    const stopAutoScroll = () => {
+      if (autoScrollRaf) {
+        cancelAnimationFrame(autoScrollRaf);
+        autoScrollRaf = null;
+      }
+      autoScrollSpeed = 0;
+    };
+
+    const updateReorderUI = (currentX) => {
+      lastClientX = currentX;
+      const rect = this.tracksContainer.getBoundingClientRect();
+      const containerX = (currentX - rect.left) + this.tracksContainer.scrollLeft;
+      const cardWidth = 72;
+      clipEl.style.left = `${containerX - cardWidth / 2}px`;
+
+      // Calculate insertion target among other clips
+      const otherClips = track.clips.filter(c => c.id !== clip.id);
+      const fingerTime = this.pixelsToTime(containerX);
+
+      let indicatorTime = 0;
+      if (otherClips.length > 0) {
+        if (fingerTime < (otherClips[0].startTime + otherClips[0].duration * 0.5)) {
+          targetIndex = 0;
+          indicatorTime = otherClips[0].startTime;
+        } else if (fingerTime >= (otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration * 0.5)) {
+          targetIndex = otherClips.length;
+          indicatorTime = otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration;
+        } else {
+          for (let i = 0; i < otherClips.length - 1; i++) {
+            const midA = otherClips[i].startTime + otherClips[i].duration * 0.5;
+            const midB = otherClips[i + 1].startTime + otherClips[i + 1].duration * 0.5;
+            if (fingerTime >= midA && fingerTime < midB) {
+              targetIndex = i + 1;
+              indicatorTime = otherClips[i].startTime + otherClips[i].duration;
+              break;
+            }
+          }
+        }
+      }
+
+      // Show glowing cyan insertion indicator
+      dropIndicator.style.left = `${indicatorTime * pps}px`;
+      dropIndicator.style.display = 'block';
+
+      // Edge proximity detection for continuous Auto-Scroll
+      const edgeThreshold = 55;
+      if (currentX < rect.left + edgeThreshold) {
+        const ratio = Math.max(0.1, (rect.left + edgeThreshold - currentX) / edgeThreshold);
+        autoScrollSpeed = -Math.round(4 + ratio * 20); // scroll left
+        startAutoScroll();
+      } else if (currentX > rect.right - edgeThreshold) {
+        const ratio = Math.max(0.1, (currentX - (rect.right - edgeThreshold)) / edgeThreshold);
+        autoScrollSpeed = Math.round(4 + ratio * 20); // scroll right
+        startAutoScroll();
+      } else {
+        autoScrollSpeed = 0;
+      }
+    };
 
     const onMove = (moveEvent) => {
       const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
@@ -261,41 +340,7 @@ class TimelineComponent {
       if (moveEvent.cancelable) moveEvent.preventDefault();
 
       if (isVideoTrack && track && track.clips.length > 1 && isReordering) {
-        // --- CapCut Mobile Clip Reordering (Collapsed Card Under Fingertip) ---
-        const rect = this.tracksContainer.getBoundingClientRect();
-        const containerX = (currentX - rect.left) + this.tracksContainer.scrollLeft;
-        const cardWidth = 72;
-        clipEl.style.left = `${containerX - cardWidth / 2}px`;
-
-        // Calculate insertion target among other clips
-        const otherClips = track.clips.filter(c => c.id !== clip.id);
-        const fingerTime = this.pixelsToTime(containerX);
-
-        let indicatorTime = 0;
-        if (otherClips.length > 0) {
-          if (fingerTime < (otherClips[0].startTime + otherClips[0].duration * 0.5)) {
-            targetIndex = 0;
-            indicatorTime = otherClips[0].startTime;
-          } else if (fingerTime >= (otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration * 0.5)) {
-            targetIndex = otherClips.length;
-            indicatorTime = otherClips[otherClips.length - 1].startTime + otherClips[otherClips.length - 1].duration;
-          } else {
-            for (let i = 0; i < otherClips.length - 1; i++) {
-              const midA = otherClips[i].startTime + otherClips[i].duration * 0.5;
-              const midB = otherClips[i + 1].startTime + otherClips[i + 1].duration * 0.5;
-              if (fingerTime >= midA && fingerTime < midB) {
-                targetIndex = i + 1;
-                indicatorTime = otherClips[i].startTime + otherClips[i].duration;
-                break;
-              }
-            }
-          }
-        }
-
-        // Show glowing cyan insertion indicator
-        dropIndicator.style.left = `${indicatorTime * pps}px`;
-        dropIndicator.style.display = 'block';
-
+        updateReorderUI(currentX);
       } else {
         // Standard dragging for audio / text tracks
         const deltaTime = deltaX / pps;
@@ -319,6 +364,8 @@ class TimelineComponent {
 
     const onEnd = () => {
       if (rafId) cancelAnimationFrame(rafId);
+      stopAutoScroll();
+
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onEnd);
       window.removeEventListener('touchmove', onMove);
@@ -358,6 +405,70 @@ class TimelineComponent {
     window.addEventListener('mouseup', onEnd);
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onEnd);
+  }
+
+  initPinchToZoom() {
+    if (!this.tracksContainer) return;
+
+    let initialDist = 0;
+    let initialZoom = this.state.zoom;
+    let anchorTime = 0;
+    let anchorClientX = 0;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        initialDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialZoom = this.state.zoom;
+        const rect = this.tracksContainer.getBoundingClientRect();
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        anchorClientX = midX - rect.left;
+        anchorTime = this.pixelsToTime(anchorClientX + this.tracksContainer.scrollLeft);
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches.length === 2 && initialDist > 0) {
+        if (e.cancelable) e.preventDefault();
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const scale = currentDist / initialDist;
+        const newZoom = Math.max(15, Math.min(220, Math.round(initialZoom * scale)));
+        if (newZoom !== this.state.zoom) {
+          this.state.setZoom(newZoom);
+          if (this.zoomSlider) this.zoomSlider.value = newZoom;
+          // Keep the point under fingers anchored in view
+          const newMidPx = this.timeToPixels(anchorTime);
+          this.tracksContainer.scrollLeft = Math.max(0, newMidPx - anchorClientX);
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) {
+        initialDist = 0;
+      }
+    };
+
+    this.tracksContainer.addEventListener('touchstart', onTouchStart, { passive: false });
+    this.tracksContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+    this.tracksContainer.addEventListener('touchend', onTouchEnd);
+    this.tracksContainer.addEventListener('touchcancel', onTouchEnd);
+
+    // Trackpad pinch-to-zoom on Mac
+    this.tracksContainer.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const zoomDelta = -e.deltaY * 0.4;
+        const newZoom = Math.max(15, Math.min(220, Math.round(this.state.zoom + zoomDelta)));
+        this.state.setZoom(newZoom);
+        if (this.zoomSlider) this.zoomSlider.value = newZoom;
+      }
+    }, { passive: false });
   }
 
   initClipTrim(e, trackType, clip, handleType) {
