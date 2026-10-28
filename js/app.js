@@ -109,7 +109,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileName = (fileNameInput ? fileNameInput.value : '').trim() || 'CapCut_Mini_Video';
         state.project.name = fileName;
         const resolution = resolutionSelect ? resolutionSelect.value : '1080p';
-        const bitrate = (qualitySelect && qualitySelect.value === 'high') ? 12000000 : 6000000;
+        const isHigh = qualitySelect && qualitySelect.value === 'high';
+        let bitrate = 12000000;
+        if (resolution === '4k') {
+          bitrate = isHigh ? 50000000 : 32000000; // 50 Mbps / 32 Mbps for 4K Ultra HD
+        } else if (resolution === '2k') {
+          bitrate = isHigh ? 28000000 : 18000000; // 28 Mbps / 18 Mbps for 2K Quad HD
+        } else if (resolution === '1080p') {
+          bitrate = isHigh ? 16000000 : 9000000;  // 16 Mbps / 9 Mbps for 1080p Full HD
+        } else {
+          bitrate = isHigh ? 8000000 : 4500000;   // 8 Mbps / 4.5 Mbps for 720p HD
+        }
 
         showExportView('progress');
         if (progressFill) progressFill.style.width = '0%';

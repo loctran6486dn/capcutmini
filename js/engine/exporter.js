@@ -39,8 +39,23 @@ class VideoExporter {
     this.state.pause();
     const originalTime = this.state.currentTime;
 
-    const targetHeight = options.resolution === '720p' ? 720 : 1080;
-    const targetWidth = Math.round(targetHeight * (this.state.project.width / this.state.project.height));
+    let targetHeight = 1080;
+    const res = (options.resolution || '1080p').toLowerCase();
+    if (res === '4k' || res === '2160p') {
+      targetHeight = 2160;
+    } else if (res === '2k' || res === '1440p') {
+      targetHeight = 1440;
+    } else if (res === '720p') {
+      targetHeight = 720;
+    } else {
+      targetHeight = 1080;
+    }
+
+    let targetWidth = Math.round(targetHeight * (this.state.project.width / this.state.project.height));
+    // Ensure even dimensions required by hardware encoders (H.264 / VP8 / VP9)
+    if (targetWidth % 2 !== 0) targetWidth += 1;
+    if (targetHeight % 2 !== 0) targetHeight += 1;
+
     const fps = 30;
     const totalDuration = this.state.duration;
 
@@ -64,10 +79,21 @@ class VideoExporter {
     const isMp4 = mimeType.includes('mp4');
     const extension = isMp4 ? 'mp4' : 'webm';
 
+    let defaultBitrate = 12000000;
+    if (targetHeight >= 2160) {
+      defaultBitrate = 40000000; // 40 Mbps for 4K Ultra HD
+    } else if (targetHeight >= 1440) {
+      defaultBitrate = 22000000; // 22 Mbps for 2K Quad HD
+    } else if (targetHeight >= 1080) {
+      defaultBitrate = 12000000; // 12 Mbps for 1080p Full HD
+    } else {
+      defaultBitrate = 6000000;  // 6 Mbps for 720p HD
+    }
+
     this.recordedChunks = [];
     this.mediaRecorder = new MediaRecorder(combinedStream, {
       mimeType,
-      videoBitsPerSecond: options.bitrate || 6000000 // 6 Mbps
+      videoBitsPerSecond: options.bitrate || defaultBitrate
     });
 
     this.mediaRecorder.ondataavailable = (e) => {

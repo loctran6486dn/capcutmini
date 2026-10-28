@@ -46,9 +46,9 @@
 
       <!-- Export Button -->
       <div class="header-right">
-        <button id="btn-open-export" class="btn btn-primary">
+        <button id="btn-open-export" class="btn btn-primary" title="Xuất video chất lượng cao">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          <span class="btn-export-text">Xuất MP4</span>
+          <span class="btn-export-text">Export</span>
         </button>
       </div>
     </header>
@@ -501,8 +501,10 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Độ phân giải</label>
+          <label class="form-label">Độ phân giải xuất video</label>
           <select id="export-resolution" class="form-select">
+            <option value="4k">4K (2160p Ultra HD - Sắc nét chuẩn rạp)</option>
+            <option value="2k">2K (1440p Quad HD - Rất sắc nét)</option>
             <option value="1080p" selected>1080p (Full HD - Khuyên dùng)</option>
             <option value="720p">720p (HD - Xuất nhanh hơn)</option>
           </select>
@@ -511,18 +513,18 @@
         <div class="form-group">
           <label class="form-label">Chất lượng / Bitrate</label>
           <select id="export-quality" class="form-select">
-            <option value="standard" selected>Chuẩn (Standard - 6 Mbps)</option>
-            <option value="high">Rất cao (High Quality - 12 Mbps)</option>
+            <option value="high" selected>Rất cao (High Bitrate - Nét căng chi tiết)</option>
+            <option value="standard">Chuẩn (Standard Bitrate - Dung lượng tối ưu)</option>
           </select>
         </div>
 
         <div style="background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: var(--text-main);">
-          ✅ <b>100% Miễn phí</b> · Không dính Watermark bản quyền · Render GPU siêu nhanh trực tiếp trên máy của bạn.
+          ✅ <b>100% Miễn phí</b> · Không dính Watermark · Hỗ trợ xuất độ phân giải cao <b>4K / 2K / 1080p / 720p</b> trực tiếp trên thiết bị của bạn.
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 8px;">
           <button id="btn-cancel-modal" class="btn btn-secondary">Đóng</button>
-          <button id="btn-start-export" class="btn btn-primary">Bắt đầu kết xuất MP4</button>
+          <button id="btn-start-export" class="btn btn-primary">Bắt đầu Export</button>
         </div>
       </div>
 
