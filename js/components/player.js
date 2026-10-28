@@ -69,17 +69,25 @@ class PlayerComponent {
   bindEvents() {
     // Play / Pause toggle
     if (this.playBtn) {
-      this.playBtn.addEventListener('click', () => {
+      const handlePlay = () => {
         window.app?.renderer?.unlockAudioPlayer();
         this.state.togglePlay();
-      });
+      };
+      this.playBtn.addEventListener('click', handlePlay);
+      this.playBtn.addEventListener('touchstart', () => {
+        window.app?.renderer?.unlockAudioPlayer();
+      }, { passive: true });
     }
 
     if (this.canvasWrapper) {
-      this.canvasWrapper.addEventListener('click', () => {
+      const handleCanvasPlay = () => {
         window.app?.renderer?.unlockAudioPlayer();
         this.state.togglePlay();
-      });
+      };
+      this.canvasWrapper.addEventListener('click', handleCanvasPlay);
+      this.canvasWrapper.addEventListener('touchstart', () => {
+        window.app?.renderer?.unlockAudioPlayer();
+      }, { passive: true });
     }
 
     this.state.on('playback:play', () => {
