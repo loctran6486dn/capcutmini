@@ -11,8 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const audioMixer = new AudioMixer(state);
   const exporter = new VideoExporter(state, renderer, audioMixer);
 
-  window.app = { state, renderer, audioMixer, exporter };
-
   // 2. Initialize UI Components
   const player = new PlayerComponent(document.querySelector('.preview-stage'), state);
   const timeline = new TimelineComponent(document.querySelector('.timeline-section'), state);
@@ -20,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const mediaManager = new MediaManagerComponent(document.querySelector('.sidebar'), state);
   const textEditor = new TextEditorComponent(document.querySelector('.sidebar'), state);
   const filterManager = new FilterManagerComponent(document.querySelector('.sidebar'), state);
+
+  window.app = { state, renderer, audioMixer, exporter, player, timeline, toolbar, mediaManager, textEditor, filterManager };
 
   // 3. Tab Switching in Left Sidebar
   const tabButtons = document.querySelectorAll('.sidebar-tabs .tab-btn');
@@ -178,36 +178,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseFilterDrawer = document.getElementById('btn-close-filter-drawer');
   if (btnCloseFilterDrawer) btnCloseFilterDrawer.addEventListener('click', closeDrawers);
 
-  // File picker triggers
-  if (btnDockVideo && inputPickVideo) {
-    btnDockVideo.addEventListener('click', () => inputPickVideo.click());
-    inputPickVideo.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        mediaManager.handleFiles(e.target.files);
-        e.target.value = '';
-      }
-    });
-  }
+  // File picker triggers (Support native <label for="..."> & programmatic click)
+  const bindFileInput = (triggerBtn, fileInput) => {
+    if (!triggerBtn || !fileInput) return;
 
-  if (btnDockImage && inputPickImage) {
-    btnDockImage.addEventListener('click', () => inputPickImage.click());
-    inputPickImage.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        mediaManager.handleFiles(e.target.files);
-        e.target.value = '';
-      }
-    });
-  }
+    // Only add explicit click dispatch if triggerBtn is not already a <label for="fileInput.id">
+    // (Native HTML labels already activate the file input on click/tap)
+    const isAssociatedLabel = triggerBtn.tagName === 'LABEL' && triggerBtn.getAttribute('for') === fileInput.id;
+    if (!isAssociatedLabel) {
+      triggerBtn.addEventListener('click', () => {
+        fileInput.click();
+      });
+    }
 
-  if (btnDockAudio && inputPickAudio) {
-    btnDockAudio.addEventListener('click', () => inputPickAudio.click());
-    inputPickAudio.addEventListener('change', (e) => {
+    // Keyboard accessibility for Enter / Space
+    triggerBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files.length > 0) {
         mediaManager.handleFiles(e.target.files);
         e.target.value = '';
       }
     });
-  }
+  };
+
+  bindFileInput(btnDockVideo, inputPickVideo);
+  bindFileInput(btnDockImage, inputPickImage);
+  bindFileInput(btnDockAudio, inputPickAudio);
 
   if (btnDockSample) {
     btnDockSample.addEventListener('click', () => {

@@ -21,10 +21,14 @@ class MediaManagerComponent {
   }
 
   bindEvents() {
-    // Dropzone click
+    // Dropzone / File Picker binding
     if (this.dropzone && this.fileInput) {
-      this.dropzone.addEventListener('click', () => {
-        this.fileInput.click();
+      // Keyboard support for label dropzone
+      this.dropzone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.fileInput.click();
+        }
       });
 
       // Drag and drop
@@ -40,7 +44,7 @@ class MediaManagerComponent {
       this.dropzone.addEventListener('drop', (e) => {
         e.preventDefault();
         this.dropzone.classList.remove('dragover');
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           this.handleFiles(e.dataTransfer.files);
         }
       });
@@ -48,6 +52,7 @@ class MediaManagerComponent {
       this.fileInput.addEventListener('change', (e) => {
         if (e.target.files && e.target.files.length > 0) {
           this.handleFiles(e.target.files);
+          e.target.value = ''; // Always clear so selecting same file or new files always triggers change
         }
       });
     }
@@ -67,64 +72,76 @@ class MediaManagerComponent {
     if (fileList.length === 0) return;
 
     for (const file of fileList) {
-      const type = file.type.startsWith('video/')
-        ? 'video'
-        : file.type.startsWith('audio/')
-        ? 'audio'
-        : file.type.startsWith('image/')
-        ? 'image'
-        : null;
+      try {
+        let type = null;
+        const mime = (file.type || '').toLowerCase();
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        const videoExts = ['mp4', 'mov', 'webm', 'm4v', '3gp', 'mkv', 'avi', 'ts', 'ogv', 'wmv'];
+        const audioExts = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma', 'opus'];
+        const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'svg'];
 
-      if (!type) continue;
-
-      const url = URL.createObjectURL(file);
-      const mediaItem = {
-        id: 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-        name: file.name,
-        type,
-        file,
-        url,
-        duration: 5,
-        thumbnail: ''
-      };
-
-      if (type === 'video') {
-        await this.loadVideoMetadata(mediaItem);
-      } else if (type === 'audio') {
-        await this.loadAudioMetadata(mediaItem);
-      } else if (type === 'image') {
-        mediaItem.duration = 4;
-        mediaItem.thumbnail = url;
-      }
-
-      this.state.addMedia(mediaItem);
-
-      // Smart aspect ratio detection for the very first video
-      if (this.state.tracks.videoTrack.clips.length === 0 && (type === 'video' || type === 'image')) {
-        if (mediaItem.width && mediaItem.height && mediaItem.height > mediaItem.width) {
-          this.state.setAspectRatio('9:16');
-          const aspectSelect = document.getElementById('select-aspect-ratio');
-          if (aspectSelect) aspectSelect.value = '9:16';
+        if (mime.startsWith('video/') || videoExts.includes(ext)) {
+          type = 'video';
+        } else if (mime.startsWith('audio/') || audioExts.includes(ext)) {
+          type = 'audio';
+        } else if (mime.startsWith('image/') || imageExts.includes(ext)) {
+          type = 'image';
+        } else {
+          // Default fallback to video for video editor
+          type = 'video';
         }
-      }
 
-      // Add EVERY selected video/image directly to Video Track sequentially
-      if (type === 'video' || type === 'image') {
-        this.state.addClipToTrack('videoTrack', {
-          mediaId: mediaItem.id,
-          name: mediaItem.name,
-          type: mediaItem.type,
-          duration: mediaItem.duration,
-          mediaDuration: mediaItem.duration
-        });
-      } else if (type === 'audio') {
-        this.state.addClipToTrack('audioTrack', {
-          mediaId: mediaItem.id,
-          name: mediaItem.name,
-          type: 'audio',
-          duration: mediaItem.duration,
-          mediaDuration: mediaItem.duration
-        });
+        const url = URL.createObjectURL(file);
+        const mediaItem = {
+          id: 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          name: file.name || ('Media_' + Date.now()),
+          type,
+          file,
+          url,
+          duration: 5,
+          thumbnail: ''
+        };
+
+        if (type === 'video') {
+          await this.loadVideoMetadata(mediaItem);
+        } else if (type === 'audio') {
+          await this.loadAudioMetadata(mediaItem);
+        } else if (type === 'image') {
+          mediaItem.duration = 4;
+          mediaItem.thumbnail = url;
+        }
+
+        this.state.addMedia(mediaItem);
+
+        // Smart aspect ratio detection for the very first video
+        if (this.state.tracks.videoTrack.clips.length === 0 && (type === 'video' || type === 'image')) {
+          if (mediaItem.width && mediaItem.height && mediaItem.height > mediaItem.width) {
+            this.state.setAspectRatio('9:16');
+            const aspectSelect = document.getElementById('select-aspect-ratio');
+            if (aspectSelect) aspectSelect.value = '9:16';
+          }
+        }
+
+        // Add EVERY selected video/image directly to Video Track sequentially
+        if (type === 'video' || type === 'image') {
+          this.state.addClipToTrack('videoTrack', {
+            mediaId: mediaItem.id,
+            name: mediaItem.name,
+            type: mediaItem.type,
+            duration: mediaItem.duration,
+            mediaDuration: mediaItem.duration
+          });
+        } else if (type === 'audio') {
+          this.state.addClipToTrack('audioTrack', {
+            mediaId: mediaItem.id,
+            name: mediaItem.name,
+            type: 'audio',
+            duration: mediaItem.duration,
+            mediaDuration: mediaItem.duration
+          });
+        }
+      } catch (err) {
+        console.error('Error adding file to timeline:', file, err);
       }
     }
 
@@ -134,19 +151,57 @@ class MediaManagerComponent {
 
   loadVideoMetadata(mediaItem) {
     return new Promise(resolve => {
+      let resolved = false;
+      let seekTimer = null;
+
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(hardTimeout);
+          if (seekTimer) clearTimeout(seekTimer);
+          cleanup();
+          resolve(mediaItem);
+        }
+      };
+
+      // 1.5s hard safety timeout: Guaranteed to resolve so media pipeline never freezes on iOS/mobile
+      const hardTimeout = setTimeout(() => {
+        if (!mediaItem.duration || isNaN(mediaItem.duration) || mediaItem.duration <= 0) {
+          mediaItem.duration = 5;
+        }
+        if (!mediaItem.width) mediaItem.width = 1920;
+        if (!mediaItem.height) mediaItem.height = 1080;
+        done();
+      }, 1500);
+
       const video = document.createElement('video');
-      video.src = mediaItem.url;
       video.preload = 'metadata';
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+
+      const cleanup = () => {
+        video.onloadedmetadata = null;
+        video.onseeked = null;
+        video.onerror = null;
+      };
 
       video.onloadedmetadata = () => {
-        mediaItem.duration = video.duration || 5;
+        mediaItem.duration = (video.duration && !isNaN(video.duration) && video.duration > 0) ? video.duration : 5;
         mediaItem.width = video.videoWidth || 1920;
         mediaItem.height = video.videoHeight || 1080;
 
-        // Capture thumbnail at 0.5s
-        video.currentTime = Math.min(0.5, mediaItem.duration / 2);
+        // Attempt thumbnail generation with quick 400ms timeout
+        seekTimer = setTimeout(() => {
+          done();
+        }, 400);
+
+        try {
+          video.currentTime = Math.min(0.5, (mediaItem.duration || 5) / 2);
+        } catch (e) {
+          done();
+        }
       };
 
       video.onseeked = () => {
@@ -160,28 +215,61 @@ class MediaManagerComponent {
         } catch (e) {
           mediaItem.thumbnail = '';
         }
-        resolve(mediaItem);
+        done();
       };
 
       video.onerror = () => {
         mediaItem.duration = 5;
-        resolve(mediaItem);
+        mediaItem.width = 1920;
+        mediaItem.height = 1080;
+        done();
       };
+
+      video.src = mediaItem.url;
+      try {
+        video.load();
+      } catch (e) {}
     });
   }
 
   loadAudioMetadata(mediaItem) {
     return new Promise(resolve => {
-      const audio = new Audio();
-      audio.src = mediaItem.url;
-      audio.onloadedmetadata = () => {
-        mediaItem.duration = audio.duration || 10;
-        resolve(mediaItem);
+      let resolved = false;
+
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(hardTimeout);
+          audio.onloadedmetadata = null;
+          audio.onerror = null;
+          resolve(mediaItem);
+        }
       };
+
+      const hardTimeout = setTimeout(() => {
+        if (!mediaItem.duration || isNaN(mediaItem.duration) || mediaItem.duration <= 0) {
+          mediaItem.duration = 10;
+        }
+        done();
+      }, 1500);
+
+      const audio = new Audio();
+      audio.preload = 'metadata';
+
+      audio.onloadedmetadata = () => {
+        mediaItem.duration = (audio.duration && !isNaN(audio.duration) && audio.duration > 0) ? audio.duration : 10;
+        done();
+      };
+
       audio.onerror = () => {
         mediaItem.duration = 10;
-        resolve(mediaItem);
+        done();
       };
+
+      audio.src = mediaItem.url;
+      try {
+        audio.load();
+      } catch (e) {}
     });
   }
 

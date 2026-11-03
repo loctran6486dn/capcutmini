@@ -1247,6 +1247,20 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none;
 }
 
+/* Visually Hidden File Input for 100% Reliable iOS Safari & Mobile Pickers */
+.visually-hidden-input {
+  position: fixed !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0.001 !important;
+  pointer-events: none !important;
+  clip: rect(0, 0, 0, 0) !important;
+  overflow: hidden !important;
+  z-index: -9999 !important;
+}
+
 .dock-btn {
   display: flex;
   flex-direction: column;
@@ -1264,6 +1278,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-radius: 8px;
   transition: all 0.15s ease;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dock-btn:hover, .dock-btn:active {
