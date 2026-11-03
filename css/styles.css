@@ -1304,6 +1304,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .icon-video { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
 .icon-image { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
 .icon-audio { background: rgba(45, 212, 191, 0.15); color: #2dd4bf; }
+.icon-speed { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
 .icon-text { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .icon-filters { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
 .icon-sample { background: rgba(16, 185, 129, 0.15); color: #34d399; }
@@ -1400,4 +1401,73 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .drawer-preset-btn:active {
   background: #353545;
   border-color: var(--accent-cyan);
+}
+
+/* Speed Drawer Controls */
+.speed-step-btn {
+  background: #272733;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.speed-step-btn:hover, .speed-step-btn:active {
+  background: rgba(249, 115, 22, 0.25);
+  border-color: #fb923c;
+  color: #fb923c;
+}
+
+.speed-preset-btn {
+  background: #272733;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  touch-action: manipulation;
+}
+.speed-preset-btn:hover {
+  background: #353545;
+  border-color: rgba(249, 115, 22, 0.5);
+}
+.speed-preset-btn.active {
+  background: rgba(249, 115, 22, 0.25);
+  border-color: #fb923c;
+  color: #fb923c;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.35);
+}
+
+.speed-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #272733;
+  border-radius: 3px;
+  outline: none;
+}
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fb923c;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.7);
+  border: 2px solid #fff;
+  transition: transform 0.1s ease;
+}
+.speed-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
 }

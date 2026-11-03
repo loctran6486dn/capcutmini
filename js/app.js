@@ -154,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDockVideo = document.getElementById('btn-dock-video');
   const btnDockImage = document.getElementById('btn-dock-image');
   const btnDockAudio = document.getElementById('btn-dock-audio');
+  const btnDockSpeed = document.getElementById('btn-dock-speed');
   const btnDockText = document.getElementById('btn-dock-text');
   const btnDockFilters = document.getElementById('btn-dock-filters');
   const btnDockSample = document.getElementById('btn-dock-sample');
@@ -165,10 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerOverlay = document.getElementById('drawer-overlay');
   const drawerText = document.getElementById('drawer-text');
   const drawerFilter = document.getElementById('drawer-filter');
+  const drawerSpeed = document.getElementById('drawer-speed');
 
   const closeDrawers = () => {
     if (drawerText) drawerText.classList.remove('open');
     if (drawerFilter) drawerFilter.classList.remove('open');
+    if (drawerSpeed) drawerSpeed.classList.remove('open');
     if (drawerOverlay) drawerOverlay.classList.remove('open');
   };
 
@@ -177,6 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnCloseTextDrawer) btnCloseTextDrawer.addEventListener('click', closeDrawers);
   const btnCloseFilterDrawer = document.getElementById('btn-close-filter-drawer');
   if (btnCloseFilterDrawer) btnCloseFilterDrawer.addEventListener('click', closeDrawers);
+  const btnCloseSpeedDrawer = document.getElementById('btn-close-speed-drawer');
+  if (btnCloseSpeedDrawer) btnCloseSpeedDrawer.addEventListener('click', closeDrawers);
 
   // File picker triggers (Support native <label for="..."> & programmatic click)
   const bindFileInput = (triggerBtn, fileInput) => {
@@ -368,6 +373,168 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Speed Drawer Controller (Tăng / Giảm tốc độ clip)
+  const speedDisplayValue = document.getElementById('speed-display-value');
+  const speedDurationInfo = document.getElementById('speed-duration-info');
+  const speedTargetBadge = document.getElementById('speed-drawer-target-clip');
+  const drawerSpeedSlider = document.getElementById('drawer-speed-slider');
+  const speedPresetBtns = document.querySelectorAll('.speed-preset-btn');
+  const btnSpeedMinus = document.getElementById('btn-speed-minus');
+  const btnSpeedPlus = document.getElementById('btn-speed-plus');
+
+  const getSpeedTargetClip = () => {
+    let clip = state.getSelectedClip();
+    if (clip && clip.type !== 'text') return clip;
+
+    // If text clip or no clip selected, find clip on videoTrack at current time
+    const time = state.currentTime;
+    const currentVideoClip = state.tracks.videoTrack.clips.find(c => time >= c.startTime && time < (c.startTime + c.duration));
+    if (currentVideoClip) {
+      state.selectClip('videoTrack', currentVideoClip.id);
+      return currentVideoClip;
+    }
+
+    // Fallback: pick the first clip on videoTrack
+    if (state.tracks.videoTrack.clips.length > 0) {
+      const first = state.tracks.videoTrack.clips[0];
+      state.selectClip('videoTrack', first.id);
+      return first;
+    }
+
+    // Fallback: check audioTrack
+    if (state.tracks.audioTrack.clips.length > 0) {
+      const firstAudio = state.tracks.audioTrack.clips[0];
+      state.selectClip('audioTrack', firstAudio.id);
+      return firstAudio;
+    }
+
+    return null;
+  };
+
+  const updateSpeedDrawerUI = (clip) => {
+    if (!clip) {
+      if (speedTargetBadge) speedTargetBadge.textContent = 'Chưa chọn clip';
+      if (speedDisplayValue) speedDisplayValue.textContent = '1.0x';
+      if (speedDurationInfo) speedDurationInfo.textContent = 'Vui lòng chọn một clip trên timeline';
+      if (drawerSpeedSlider) drawerSpeedSlider.value = 1.0;
+      speedPresetBtns.forEach(b => b.classList.toggle('active', b.dataset.speed === '1.0'));
+      return;
+    }
+
+    const speed = clip.speed || 1.0;
+    const rawContentDuration = (clip.duration * speed);
+
+    if (speedTargetBadge) {
+      speedTargetBadge.textContent = clip.name || 'Clip đang chọn';
+    }
+    if (speedDisplayValue) {
+      const formatted = (speed % 1 === 0) ? speed.toFixed(1) : (Math.round(speed * 10) / 10 === speed ? speed.toFixed(1) : speed.toFixed(2));
+      speedDisplayValue.textContent = `${formatted}x`;
+    }
+    if (speedDurationInfo) {
+      speedDurationInfo.textContent = `Thời lượng mới: ${clip.duration.toFixed(2)}s · Gốc: ${rawContentDuration.toFixed(2)}s`;
+    }
+    if (drawerSpeedSlider) {
+      drawerSpeedSlider.value = speed;
+    }
+
+    speedPresetBtns.forEach(btn => {
+      const bSpeed = parseFloat(btn.dataset.speed);
+      btn.classList.toggle('active', Math.abs(bSpeed - speed) < 0.05);
+    });
+  };
+
+  const applyClipSpeed = (targetSpeed) => {
+    let clip = getSpeedTargetClip();
+    if (!clip) {
+      alert('Vui lòng thêm video vào Timeline trước khi chỉnh tốc độ!');
+      return;
+    }
+
+    // Clamp speed between 0.2x and 5.0x
+    targetSpeed = Math.max(0.2, Math.min(5.0, Math.round(targetSpeed * 100) / 100));
+
+    const oldSpeed = clip.speed || 1.0;
+    const baseDuration = (clip.duration * oldSpeed);
+    const newDuration = Math.max(0.1, Number((baseDuration / targetSpeed).toFixed(3)));
+
+    const trackType = state.selectedClip?.trackType || 'videoTrack';
+    state.updateClip(trackType, clip.id, {
+      speed: targetSpeed,
+      duration: newDuration
+    });
+
+    // Sync desktop toolbar select-speed
+    const toolbarSpeedSelect = document.getElementById('select-speed');
+    if (toolbarSpeedSelect) {
+      toolbarSpeedSelect.value = targetSpeed.toString();
+    }
+
+    // Refresh drawer UI
+    const updatedClip = state.getSelectedClip() || clip;
+    updateSpeedDrawerUI(updatedClip);
+  };
+
+  if (btnDockSpeed && drawerSpeed) {
+    btnDockSpeed.addEventListener('click', () => {
+      const clip = getSpeedTargetClip();
+      if (!clip) {
+        alert('Timeline hiện tại chưa có video nào! Vui lòng bấm "+ Video" để thêm video trước.');
+        return;
+      }
+      updateSpeedDrawerUI(clip);
+      closeDrawers();
+      drawerSpeed.classList.add('open');
+      if (drawerOverlay) drawerOverlay.classList.add('open');
+    });
+
+    // Slider input
+    if (drawerSpeedSlider) {
+      drawerSpeedSlider.addEventListener('input', (e) => {
+        applyClipSpeed(parseFloat(e.target.value));
+      });
+    }
+
+    // Step buttons
+    if (btnSpeedMinus) {
+      btnSpeedMinus.addEventListener('click', () => {
+        const clip = getSpeedTargetClip();
+        const cur = clip?.speed || 1.0;
+        applyClipSpeed(cur - 0.1);
+      });
+    }
+    if (btnSpeedPlus) {
+      btnSpeedPlus.addEventListener('click', () => {
+        const clip = getSpeedTargetClip();
+        const cur = clip?.speed || 1.0;
+        applyClipSpeed(cur + 0.1);
+      });
+    }
+
+    // Preset buttons
+    speedPresetBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = parseFloat(btn.dataset.speed);
+        applyClipSpeed(s);
+      });
+    });
+  }
+
+  // Auto update speed drawer UI if open when a clip is selected on timeline
+  state.on('clip:selected', (selected) => {
+    if (drawerSpeed && drawerSpeed.classList.contains('open') && selected) {
+      const clip = state.getSelectedClip();
+      if (clip) updateSpeedDrawerUI(clip);
+    }
+  });
+
+  state.on('tracks:changed', () => {
+    if (drawerSpeed && drawerSpeed.classList.contains('open')) {
+      const clip = state.getSelectedClip();
+      if (clip) updateSpeedDrawerUI(clip);
+    }
+  });
 
   // Initial render
   state.recalculateDuration();
