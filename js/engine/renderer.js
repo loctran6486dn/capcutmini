@@ -114,11 +114,13 @@ class CanvasRenderer {
     });
 
     this.state.on('playback:play', () => {
+      this._clipPlayStartTime = performance.now();
       this.unlockAudioPlayer();
       this.startLoop();
     });
 
     this.state.on('playback:pause', () => {
+      this._clipPlayStartTime = null;
       this.stopLoop();
       this.syncActiveVideos(false);
     });
@@ -254,21 +256,36 @@ class CanvasRenderer {
 
       activeEl.muted = true; // Visual element is always muted
 
-      // When crossing between cut/split clips, jump to target time if not already at it
+      const now = performance.now();
+      const timeSinceStart = this._clipPlayStartTime ? (now - this._clipPlayStartTime) : 1000;
+
+      // When crossing between cut/split clips, jump to target time once
       if (this.lastActiveClipId !== activeClip.id) {
         this.lastActiveClipId = activeClip.id;
+        this._clipPlayStartTime = now;
         if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.05) {
           activeEl.currentTime = targetMediaTime;
         }
-      } else {
-        // Continuous playback within same clip: only sync if drift is substantial (> 0.25s)
-        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.25) {
-          activeEl.currentTime = targetMediaTime;
-        }
-      }
-
-      if (activeEl.playbackRate !== clipSpeed) {
         activeEl.playbackRate = clipSpeed;
+      } else {
+        // Continuous playback within same clip:
+        // Use Dynamic Clock Skewing to eliminate decoder seek thrashing at high speeds (2x, 3x, 5x)
+        const drift = activeEl.currentTime - targetMediaTime;
+        const absDrift = Math.abs(drift);
+        const hardSeekThreshold = Math.max(0.65, 0.45 * clipSpeed);
+
+        if (absDrift > hardSeekThreshold && timeSinceStart >= 500) {
+          if (!activeEl.seeking) {
+            activeEl.currentTime = targetMediaTime;
+          }
+        } else if (absDrift > 0.08 && timeSinceStart >= 300) {
+          // Gentle clock adjustment: +/- 5% to lock in sync without hard seek
+          activeEl.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+        } else {
+          if (activeEl.playbackRate !== clipSpeed) {
+            activeEl.playbackRate = clipSpeed;
+          }
+        }
       }
 
       if (isPlaying) {
@@ -322,6 +339,7 @@ class CanvasRenderer {
     // TRANSITION: Clip changed!
     if (this._currentAudioClipId !== activeClip.id) {
       this._currentAudioClipId = activeClip.id;
+      this._clipPlayStartTime = performance.now();
 
       // Check if standby player was already pre-warmed for this exact clip!
       if (this._prewarmedClipId === activeClip.id && this.standbyAudioPlayer) {
@@ -389,11 +407,23 @@ class CanvasRenderer {
       const player = this.activeAudioPlayer;
       if (player.volume !== vol) player.volume = vol;
       player.muted = (vol === 0);
-      if (player.playbackRate !== clipSpeed) player.playbackRate = clipSpeed;
 
-      // Only re-sync if drift > 0.25s
-      if (Math.abs(player.currentTime - targetMediaTime) > 0.25) {
-        player.currentTime = targetMediaTime;
+      const now = performance.now();
+      const timeSinceStart = this._clipPlayStartTime ? (now - this._clipPlayStartTime) : 1000;
+      const drift = player.currentTime - targetMediaTime;
+      const absDrift = Math.abs(drift);
+      const hardSeekThreshold = Math.max(0.65, 0.45 * clipSpeed);
+
+      if (absDrift > hardSeekThreshold && timeSinceStart >= 500) {
+        if (!player.seeking) {
+          player.currentTime = targetMediaTime;
+        }
+      } else if (absDrift > 0.08 && timeSinceStart >= 300) {
+        player.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+      } else {
+        if (player.playbackRate !== clipSpeed) {
+          player.playbackRate = clipSpeed;
+        }
       }
 
       if (this.state.isPlaying && player.paused) {

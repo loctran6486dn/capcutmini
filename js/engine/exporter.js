@@ -16,15 +16,17 @@ class VideoExporter {
   getBestMimeType() {
     const candidates = [
       'video/mp4;codecs=avc1.4d401f,mp4a.40.2',
-      'video/mp4;codecs=avc1',
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/mp4;codecs=avc1,opus',
       'video/mp4',
       'video/webm;codecs=h264,opus',
       'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
       'video/webm'
     ];
 
     for (const mime of candidates) {
-      if (MediaRecorder.isTypeSupported(mime)) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mime)) {
         return mime;
       }
     }
@@ -38,6 +40,9 @@ class VideoExporter {
     // Pause current preview
     this.state.pause();
     const originalTime = this.state.currentTime;
+
+    // Pre-create and unlock audio elements within user interaction context
+    await this.audioMixer.prepareExport();
 
     let targetHeight = 1080;
     const res = (options.resolution || '1080p').toLowerCase();
@@ -65,7 +70,7 @@ class VideoExporter {
     exportCanvas.height = targetHeight;
     const exportCtx = exportCanvas.getContext('2d');
 
-    // Create combined stream
+    // Create combined stream with both video and mixed audio tracks
     const canvasStream = exportCanvas.captureStream(fps);
     const audioStream = this.audioMixer.getAudioDestinationStream();
 
@@ -123,11 +128,11 @@ class VideoExporter {
           // Restore state
           this.state.seek(originalTime);
           this.isExporting = false;
-          this.audioMixer.isExporting = false;
+          this.audioMixer.finishExport();
           resolve({ success: true, blob, extension });
         } catch (err) {
           this.isExporting = false;
-          this.audioMixer.isExporting = false;
+          this.audioMixer.finishExport();
           reject(err);
         }
       };
@@ -136,13 +141,10 @@ class VideoExporter {
 
       // Render timeline in real time for recorder sync
       let currentTime = 0;
-      const frameInterval = 1 / fps;
       const startTime = performance.now();
 
-      // Ensure audio context is unmuted and active
-      this.audioMixer.isExporting = true;
-      this.audioMixer.ensureContext();
-      this.audioMixer.syncPlayback(true);
+      // Start initial audio frame at 0
+      this.audioMixer.syncPlayback(true, 0);
 
       const renderStep = () => {
         if (!this.isExporting) {
@@ -153,6 +155,9 @@ class VideoExporter {
         const now = performance.now();
         const elapsed = (now - startTime) / 1000;
         currentTime = Math.min(elapsed, totalDuration);
+
+        // Keep AudioMixer in exact lockstep with export currentTime
+        this.audioMixer.syncPlayback(true, currentTime);
 
         // Seek internal audio & video elements
         this.renderer.renderFrame(currentTime, exportCanvas, exportCtx);
@@ -168,7 +173,7 @@ class VideoExporter {
         if (currentTime >= totalDuration) {
           setTimeout(() => {
             this.mediaRecorder.stop();
-            this.audioMixer.syncPlayback(false);
+            this.audioMixer.finishExport();
           }, 500);
         } else {
           requestAnimationFrame(renderStep);
@@ -182,7 +187,7 @@ class VideoExporter {
   cancelExport() {
     if (this.isExporting && this.mediaRecorder) {
       this.isExporting = false;
-      this.audioMixer.isExporting = false;
+      this.audioMixer.finishExport();
       this.mediaRecorder.stop();
     }
   }
