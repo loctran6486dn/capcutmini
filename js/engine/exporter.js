@@ -25,7 +25,6 @@ class VideoExporter {
         'video/mp4;codecs=avc1.640033,mp4a.40.2',
         'video/mp4;codecs=avc1.4d4033,mp4a.40.2',
         'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4;codecs=avc1,opus',
         'video/mp4',
         'video/webm;codecs=vp9,opus',
         'video/webm;codecs=h264,opus',
@@ -37,7 +36,6 @@ class VideoExporter {
         'video/mp4;codecs=avc1.640032,mp4a.40.2',
         'video/mp4;codecs=avc1.4d4032,mp4a.40.2',
         'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4;codecs=avc1,opus',
         'video/mp4',
         'video/webm;codecs=vp9,opus',
         'video/webm;codecs=h264,opus',
@@ -135,15 +133,15 @@ class VideoExporter {
     const extension = isMp4 ? 'mp4' : 'webm';
 
     // Mobile-safe bitrates conforming to H.264 hardware decoder DPB specs
-    let defaultBitrate = 8000000;
+    let defaultBitrate = 7000000;
     if (targetHeight >= 2160) {
-      defaultBitrate = 22000000; // 22 Mbps for 4K Ultra HD
+      defaultBitrate = 18000000; // 18 Mbps for 4K Ultra HD (optimal mobile hardware decoding)
     } else if (targetHeight >= 1440) {
-      defaultBitrate = 14000000; // 14 Mbps for 2K Quad HD
+      defaultBitrate = 12000000; // 12 Mbps for 2K Quad HD (optimal mobile hardware decoding)
     } else if (targetHeight >= 1080) {
-      defaultBitrate = 8000000;  // 8 Mbps for 1080p Full HD
+      defaultBitrate = 7000000;  // 7 Mbps for 1080p Full HD
     } else {
-      defaultBitrate = 4000000;  // 4 Mbps for 720p HD
+      defaultBitrate = 3500000;  // 3.5 Mbps for 720p HD
     }
 
     this.recordedChunks = [];
@@ -206,9 +204,11 @@ class VideoExporter {
 
       this.mediaRecorder.start(200);
 
-      // Render timeline in real time for recorder sync
+      // Render timeline in real time for recorder sync with target fps throttling
       let currentTime = 0;
       const startTime = performance.now();
+      const frameIntervalMs = 1000 / fps; // 33.33ms
+      let lastFrameExportTime = startTime - frameIntervalMs;
 
       // Start initial playback sync at 0
       this.audioMixer.syncPlayback(true, 0);
@@ -232,8 +232,12 @@ class VideoExporter {
         // Keep Renderer video elements continuously playing and synchronized (hardware accelerated, no seek thrashing)
         this.renderer.syncActiveVideos(true, currentTime);
 
-        // Draw current video frame to offscreen export canvas (no seeking churn)
-        this.renderer.renderFrame(currentTime, exportCanvas, exportCtx, { allowSeek: false });
+        // Throttle 4K / 2K offscreen canvas rendering to target 30 fps (avoids GPU overload and dropped frames on 60Hz/120Hz displays)
+        const timeSinceLastFrame = now - lastFrameExportTime;
+        if (timeSinceLastFrame >= (frameIntervalMs - 3) || currentTime >= totalDuration) {
+          lastFrameExportTime = now;
+          this.renderer.renderFrame(currentTime, exportCanvas, exportCtx, { allowSeek: false });
+        }
 
         // Calculate progress percentage
         const progress = Math.min(100, Math.round((currentTime / totalDuration) * 100));

@@ -39,9 +39,19 @@ class AudioMixer {
       }
     });
 
-    // When clips are cut, split, or deleted: IMMEDIATELY silence all audio and re-sync
+    // When clips are cut, split, or deleted: IMMEDIATELY silence all audio and clean up deleted elements
     this.state.on('tracks:changed', () => {
       this.pauseAll();
+      const activeAudioClipKeys = new Set(this.state.tracks.audioTrack.clips.map(c => `audio_${c.id}`));
+      this.audioElements.forEach((audio, key) => {
+        if (key.startsWith('audio_') && !activeAudioClipKeys.has(key)) {
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
+          if (audio.parentNode) audio.parentNode.removeChild(audio);
+          this.audioElements.delete(key);
+        }
+      });
       this.syncPlayback(this.state.isPlaying);
     });
   }
@@ -190,6 +200,16 @@ class AudioMixer {
     if (this.previewGain) {
       this.previewGain.gain.value = 1; // Restore preview speakers
     }
+    // Clean up temporary export video audio elements to avoid leaking DOM nodes and decoders
+    this.audioElements.forEach((audio, key) => {
+      if (key.startsWith('video_')) {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+        if (audio.parentNode) audio.parentNode.removeChild(audio);
+        this.audioElements.delete(key);
+      }
+    });
   }
 
   syncPlayback(isPlaying, explicitTime = null) {

@@ -137,9 +137,12 @@ class CanvasRenderer {
     });
 
     this.state.on('playback:play', () => {
+      this.lastActiveClipId = null;
+      this._currentAudioClipId = null;
       this._clipPlayStartTime = performance.now();
       this._lastHardSeekTime = 0;
       this.unlockAudioPlayer();
+      this.syncActiveVideos(true);
       this.startLoop();
     });
 
@@ -186,11 +189,14 @@ class CanvasRenderer {
       video.style.zIndex = '-999';
       document.body.appendChild(video);
 
-      video.addEventListener('seeked', () => {
+      const onFrameAvailable = () => {
         if (!this.state.isPlaying && !this.isExporting) {
           this.drawFrameImmediate(this.state.currentTime);
         }
-      });
+      };
+      video.addEventListener('seeked', onFrameAvailable);
+      video.addEventListener('loadeddata', onFrameAvailable);
+      video.addEventListener('canplay', onFrameAvailable);
       this.mediaElements.set(key, video);
       return video;
     } else if (mediaItem.type === 'image') {
@@ -355,26 +361,29 @@ class CanvasRenderer {
           activeEl.currentTime = targetMediaTime;
         }
         activeEl.playbackRate = clipSpeed;
-      } else {
+      } else if (isPlaying) {
         // Continuous playback within same clip:
         // Use Dynamic Proportional Clock Skewing to eliminate decoder seek thrashing
-        const drift = activeEl.currentTime - targetMediaTime;
-        const absDrift = Math.abs(drift);
-        const hardSeekThreshold = 1.2;
-        const nowTime = performance.now();
+        // ONLY apply after initial 350ms buffer ramp-up so video decoder starts smoothly without fighting clock
+        if (timeSinceStart >= 350) {
+          const drift = activeEl.currentTime - targetMediaTime;
+          const absDrift = Math.abs(drift);
+          const hardSeekThreshold = 1.2;
+          const nowTime = performance.now();
 
-        if (absDrift > hardSeekThreshold && timeSinceStart >= 500 && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 1500)) {
-          if (!activeEl.seeking) {
-            this._lastHardSeekTime = nowTime;
-            activeEl.currentTime = targetMediaTime;
-          }
-        } else if (absDrift > 0.04 && timeSinceStart >= 200) {
-          // Gentle clock adjustment: +/- 12% to lock in sync without hard seek freeze
-          const rateCorrection = Math.max(0.88, Math.min(1.12, 1.0 - drift * 0.25));
-          activeEl.playbackRate = clipSpeed * rateCorrection;
-        } else {
-          if (activeEl.playbackRate !== clipSpeed) {
-            activeEl.playbackRate = clipSpeed;
+          if (absDrift > hardSeekThreshold && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 2000)) {
+            if (!activeEl.seeking) {
+              this._lastHardSeekTime = nowTime;
+              activeEl.currentTime = targetMediaTime;
+            }
+          } else if (absDrift > 0.05 && absDrift <= hardSeekThreshold) {
+            // Gentle clock adjustment: +/- 10% to lock in sync without hard seek freeze
+            const rateCorrection = Math.max(0.90, Math.min(1.10, 1.0 - drift * 0.20));
+            activeEl.playbackRate = clipSpeed * rateCorrection;
+          } else {
+            if (activeEl.playbackRate !== clipSpeed) {
+              activeEl.playbackRate = clipSpeed;
+            }
           }
         }
       }
@@ -451,13 +460,15 @@ class CanvasRenderer {
         player.currentTime = targetMediaTime;
       }
     } else {
-      player.addEventListener('loadedmetadata', () => {
+      const onReady = () => {
         if (Math.abs(player.currentTime - targetMediaTime) > 0.05) {
           player.currentTime = targetMediaTime;
         }
-      }, { once: true });
+      };
+      player.addEventListener('loadedmetadata', onReady, { once: true });
+      player.addEventListener('canplay', onReady, { once: true });
     }
-    this._currentAudioClipId = activeClip.id;
+    this._currentAudioClipId = null;
   }
 
   syncAudioPlayerPingPong(activeClip, isPlaying, time) {
@@ -542,9 +553,10 @@ class CanvasRenderer {
           }
         } else {
           player.addEventListener('loadedmetadata', onMeta, { once: true });
+          player.addEventListener('canplay', onMeta, { once: true });
         }
 
-        if (this.state.isPlaying && player.readyState >= 1) {
+        if (this.state.isPlaying && player.paused) {
           const p = player.play();
           if (p !== undefined) p.catch(() => {});
         }
@@ -557,22 +569,25 @@ class CanvasRenderer {
 
       const now = performance.now();
       const timeSinceStart = this._clipPlayStartTime ? (now - this._clipPlayStartTime) : 1000;
-      const drift = player.currentTime - targetMediaTime;
-      const absDrift = Math.abs(drift);
-      const hardSeekThreshold = 1.2;
-      const nowTime = performance.now();
 
-      if (absDrift > hardSeekThreshold && timeSinceStart >= 500 && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 1500)) {
-        if (!player.seeking) {
-          this._lastHardSeekTime = nowTime;
-          player.currentTime = targetMediaTime;
-        }
-      } else if (absDrift > 0.04 && timeSinceStart >= 200) {
-        const rateCorrection = Math.max(0.88, Math.min(1.12, 1.0 - drift * 0.25));
-        player.playbackRate = clipSpeed * rateCorrection;
-      } else {
-        if (player.playbackRate !== clipSpeed) {
-          player.playbackRate = clipSpeed;
+      if (this.state.isPlaying && timeSinceStart >= 350) {
+        const drift = player.currentTime - targetMediaTime;
+        const absDrift = Math.abs(drift);
+        const hardSeekThreshold = 1.2;
+        const nowTime = performance.now();
+
+        if (absDrift > hardSeekThreshold && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 2000)) {
+          if (!player.seeking) {
+            this._lastHardSeekTime = nowTime;
+            player.currentTime = targetMediaTime;
+          }
+        } else if (absDrift > 0.05 && absDrift <= hardSeekThreshold) {
+          const rateCorrection = Math.max(0.90, Math.min(1.10, 1.0 - drift * 0.20));
+          player.playbackRate = clipSpeed * rateCorrection;
+        } else {
+          if (player.playbackRate !== clipSpeed) {
+            player.playbackRate = clipSpeed;
+          }
         }
       }
 
@@ -689,13 +704,17 @@ class CanvasRenderer {
           if (!this.state.isPlaying && !this.isExporting && options.allowSeek) {
             const clipSpeed = activeVideoClip.speed || 1.0;
             const targetTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
-            if (!mediaEl.seeking && (mediaEl._lastRequestedSeekTime === null || Math.abs(mediaEl.currentTime - targetTime) > 0.04)) {
+            if (!mediaEl.seeking && Math.abs(mediaEl.currentTime - targetTime) > 0.04) {
               mediaEl._lastRequestedSeekTime = targetTime;
               mediaEl.currentTime = targetTime;
             }
           }
           if (mediaEl.readyState >= 2) {
             this.drawImageCover(ctx, mediaEl, 0, 0, width, height);
+          } else if (mediaEl.readyState >= 1) {
+            try {
+              this.drawImageCover(ctx, mediaEl, 0, 0, width, height);
+            } catch (e) {}
           }
         } else if (mediaEl.tagName === 'IMG' && mediaEl.complete) {
           this.drawImageCover(ctx, mediaEl, 0, 0, width, height);
