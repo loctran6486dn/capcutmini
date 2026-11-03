@@ -13,17 +13,58 @@ class VideoExporter {
     this.recordedChunks = [];
   }
 
-  getBestMimeType() {
-    const candidates = [
-      'video/mp4;codecs=avc1.4d401f,mp4a.40.2',
-      'video/mp4;codecs=avc1,mp4a.40.2',
-      'video/mp4;codecs=avc1,opus',
-      'video/mp4',
-      'video/webm;codecs=h264,opus',
-      'video/webm;codecs=vp9,opus',
-      'video/webm;codecs=vp8,opus',
-      'video/webm'
-    ];
+  getBestMimeType(resolution = '1080p') {
+    const res = (resolution || '1080p').toLowerCase();
+    const is4K = res === '4k' || res === '2160p';
+    const is2K = res === '2k' || res === '1440p';
+    const is1080p = res === '1080p';
+
+    let candidates = [];
+    if (is4K) {
+      candidates = [
+        'video/mp4;codecs=avc1.640033,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d4033,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4;codecs=avc1,opus',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+    } else if (is2K) {
+      candidates = [
+        'video/mp4;codecs=avc1.640032,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d4032,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4;codecs=avc1,opus',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+    } else if (is1080p) {
+      candidates = [
+        'video/mp4;codecs=avc1.640028,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d4028,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d401f,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm'
+      ];
+    } else {
+      candidates = [
+        'video/mp4;codecs=avc1.4d401f,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=h264,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+    }
 
     for (const mime of candidates) {
       if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mime)) {
@@ -36,6 +77,9 @@ class VideoExporter {
   async exportProject(options = {}, onProgress = () => {}) {
     if (this.isExporting) return;
     this.isExporting = true;
+    if (this.renderer) {
+      this.renderer.isExporting = true;
+    }
 
     // Pause current preview
     this.state.pause();
@@ -70,6 +114,12 @@ class VideoExporter {
     exportCanvas.height = targetHeight;
     const exportCtx = exportCanvas.getContext('2d');
 
+    // Pre-seek and pre-render initial frame at 0s so canvas is ready before recording starts
+    this.renderer.syncActiveVideos(false, 0);
+    this.renderer.renderFrame(0, exportCanvas, exportCtx, { allowSeek: true });
+    await new Promise(r => setTimeout(r, 60));
+    this.renderer.renderFrame(0, exportCanvas, exportCtx, { allowSeek: false });
+
     // Create combined stream with both video and mixed audio tracks
     const canvasStream = exportCanvas.captureStream(fps);
     const audioStream = this.audioMixer.getAudioDestinationStream();
@@ -80,19 +130,20 @@ class VideoExporter {
     }
     const combinedStream = new MediaStream(tracks);
 
-    const mimeType = this.getBestMimeType();
+    const mimeType = this.getBestMimeType(res);
     const isMp4 = mimeType.includes('mp4');
     const extension = isMp4 ? 'mp4' : 'webm';
 
-    let defaultBitrate = 12000000;
+    // Mobile-safe bitrates conforming to H.264 hardware decoder DPB specs
+    let defaultBitrate = 8000000;
     if (targetHeight >= 2160) {
-      defaultBitrate = 40000000; // 40 Mbps for 4K Ultra HD
+      defaultBitrate = 22000000; // 22 Mbps for 4K Ultra HD
     } else if (targetHeight >= 1440) {
-      defaultBitrate = 22000000; // 22 Mbps for 2K Quad HD
+      defaultBitrate = 14000000; // 14 Mbps for 2K Quad HD
     } else if (targetHeight >= 1080) {
-      defaultBitrate = 12000000; // 12 Mbps for 1080p Full HD
+      defaultBitrate = 8000000;  // 8 Mbps for 1080p Full HD
     } else {
-      defaultBitrate = 6000000;  // 6 Mbps for 720p HD
+      defaultBitrate = 4000000;  // 4 Mbps for 720p HD
     }
 
     this.recordedChunks = [];
@@ -107,9 +158,27 @@ class VideoExporter {
       }
     };
 
+    const cleanupExport = () => {
+      this.isExporting = false;
+      if (this.renderer) {
+        this.renderer.isExporting = false;
+        this.renderer.syncActiveVideos(false);
+      }
+      this.audioMixer.finishExport();
+    };
+
+    this.isCancelled = false;
+
     return new Promise((resolve, reject) => {
       this.mediaRecorder.onstop = () => {
         try {
+          if (this.isCancelled) {
+            cleanupExport();
+            this.state.seek(originalTime);
+            reject(new Error('Export was cancelled by user'));
+            return;
+          }
+
           const blob = new Blob(this.recordedChunks, { type: mimeType });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -127,12 +196,10 @@ class VideoExporter {
 
           // Restore state
           this.state.seek(originalTime);
-          this.isExporting = false;
-          this.audioMixer.finishExport();
+          cleanupExport();
           resolve({ success: true, blob, extension });
         } catch (err) {
-          this.isExporting = false;
-          this.audioMixer.finishExport();
+          cleanupExport();
           reject(err);
         }
       };
@@ -143,12 +210,15 @@ class VideoExporter {
       let currentTime = 0;
       const startTime = performance.now();
 
-      // Start initial audio frame at 0
+      // Start initial playback sync at 0
       this.audioMixer.syncPlayback(true, 0);
+      this.renderer.syncActiveVideos(true, 0);
 
       const renderStep = () => {
         if (!this.isExporting) {
-          this.mediaRecorder.stop();
+          if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+          }
           return;
         }
 
@@ -159,8 +229,11 @@ class VideoExporter {
         // Keep AudioMixer in exact lockstep with export currentTime
         this.audioMixer.syncPlayback(true, currentTime);
 
-        // Seek internal audio & video elements
-        this.renderer.renderFrame(currentTime, exportCanvas, exportCtx);
+        // Keep Renderer video elements continuously playing and synchronized (hardware accelerated, no seek thrashing)
+        this.renderer.syncActiveVideos(true, currentTime);
+
+        // Draw current video frame to offscreen export canvas (no seeking churn)
+        this.renderer.renderFrame(currentTime, exportCanvas, exportCtx, { allowSeek: false });
 
         // Calculate progress percentage
         const progress = Math.min(100, Math.round((currentTime / totalDuration) * 100));
@@ -172,9 +245,10 @@ class VideoExporter {
 
         if (currentTime >= totalDuration) {
           setTimeout(() => {
-            this.mediaRecorder.stop();
-            this.audioMixer.finishExport();
-          }, 500);
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+              this.mediaRecorder.stop();
+            }
+          }, 300);
         } else {
           requestAnimationFrame(renderStep);
         }
@@ -185,10 +259,17 @@ class VideoExporter {
   }
 
   cancelExport() {
-    if (this.isExporting && this.mediaRecorder) {
+    if (this.isExporting) {
+      this.isCancelled = true;
       this.isExporting = false;
+      if (this.renderer) {
+        this.renderer.isExporting = false;
+        this.renderer.syncActiveVideos(false);
+      }
       this.audioMixer.finishExport();
-      this.mediaRecorder.stop();
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop();
+      }
     }
   }
 }

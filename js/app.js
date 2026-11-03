@@ -110,15 +110,15 @@ document.addEventListener('DOMContentLoaded', () => {
         state.project.name = fileName;
         const resolution = resolutionSelect ? resolutionSelect.value : '1080p';
         const isHigh = qualitySelect && qualitySelect.value === 'high';
-        let bitrate = 12000000;
+        let bitrate = 8000000;
         if (resolution === '4k') {
-          bitrate = isHigh ? 50000000 : 32000000; // 50 Mbps / 32 Mbps for 4K Ultra HD
+          bitrate = isHigh ? 28000000 : 20000000; // 28 Mbps / 20 Mbps for 4K Ultra HD (mobile standard)
         } else if (resolution === '2k') {
-          bitrate = isHigh ? 28000000 : 18000000; // 28 Mbps / 18 Mbps for 2K Quad HD
+          bitrate = isHigh ? 18000000 : 12000000; // 18 Mbps / 12 Mbps for 2K Quad HD (mobile standard)
         } else if (resolution === '1080p') {
-          bitrate = isHigh ? 16000000 : 9000000;  // 16 Mbps / 9 Mbps for 1080p Full HD
+          bitrate = isHigh ? 10000000 : 6000000;  // 10 Mbps / 6 Mbps for 1080p Full HD
         } else {
-          bitrate = isHigh ? 8000000 : 4500000;   // 8 Mbps / 4.5 Mbps for 720p HD
+          bitrate = isHigh ? 5000000 : 3500000;   // 5 Mbps / 3.5 Mbps for 720p HD
         }
 
         showExportView('progress');

@@ -73,7 +73,9 @@ class AudioMixer {
     }
     if (this.audioCtx.state === 'suspended') {
       try {
-        await this.audioCtx.resume();
+        const resumePromise = this.audioCtx.resume();
+        const timeoutPromise = new Promise(r => setTimeout(r, 200));
+        await Promise.race([resumePromise, timeoutPromise]);
       } catch (e) {
         console.warn('AudioContext resume failed:', e);
       }

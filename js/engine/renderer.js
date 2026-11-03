@@ -9,6 +9,8 @@ class CanvasRenderer {
     this.state = state;
     this.animationFrameId = null;
     this.lastRenderTime = 0;
+    this.isExporting = false;
+    this._lastHardSeekTime = 0;
 
     // Cache of HTMLVideoElements / HTMLImageElements (visual only, permanently muted)
     this.mediaElements = new Map();
@@ -96,8 +98,15 @@ class CanvasRenderer {
     this.state.on('seek', () => {
       this._prewarmedClipId = null;
       this._prewarmingVideoEl = null;
+      this.lastActiveClipId = null;
+      this._clipPlayStartTime = null;
+      this._lastHardSeekTime = 0;
+      this.mediaElements.forEach(el => {
+        el._lastRequestedSeekTime = null;
+      });
       if (this.audioPlayerA && !this.audioPlayerA.paused) this.audioPlayerA.pause();
       if (this.audioPlayerB && !this.audioPlayerB.paused) this.audioPlayerB.pause();
+      this.syncActiveVideos(this.state.isPlaying);
       this.renderCurrentFrame();
     });
 
@@ -106,15 +115,30 @@ class CanvasRenderer {
       this._currentAudioClipId = null;
       this._prewarmedClipId = null;
       this._prewarmingVideoEl = null;
-      this.mediaElements.forEach(el => {
+      this._lastHardSeekTime = 0;
+
+      // Clean up deleted clips' video elements to free resources
+      const activeVideoClipKeys = new Set(this.state.tracks.videoTrack.clips.map(c => `clip_${c.id}`));
+      this.mediaElements.forEach((el, key) => {
         el._lastRequestedSeekTime = null;
+        if (key.startsWith('clip_') && !activeVideoClipKeys.has(key)) {
+          if (el.tagName === 'VIDEO') {
+            el.pause();
+            el.removeAttribute('src');
+            el.load();
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }
+          this.mediaElements.delete(key);
+        }
       });
+
       this.syncActiveVideos(this.state.isPlaying);
       this.renderCurrentFrame();
     });
 
     this.state.on('playback:play', () => {
       this._clipPlayStartTime = performance.now();
+      this._lastHardSeekTime = 0;
       this.unlockAudioPlayer();
       this.startLoop();
     });
@@ -131,6 +155,61 @@ class CanvasRenderer {
     this.canvas.height = this.state.project.height;
   }
 
+  getClipMediaElement(clip) {
+    if (!clip || !clip.mediaId) return null;
+    const mediaItem = this.state.getMedia(clip.mediaId);
+    if (!mediaItem) return null;
+
+    if (mediaItem.type === 'video') {
+      const key = `clip_${clip.id}`;
+      if (this.mediaElements.has(key)) {
+        return this.mediaElements.get(key);
+      }
+      const video = document.createElement('video');
+      video.src = mediaItem.url;
+      video.crossOrigin = 'anonymous';
+      video.muted = true; // Permanently muted for visual frame rendering (never blocked by iOS Safari)
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.preload = 'auto';
+      video._lastRequestedSeekTime = null;
+
+      // Attach to DOM so mobile browsers treat it as an active media pipeline
+      video.style.position = 'fixed';
+      video.style.top = '-9999px';
+      video.style.left = '-9999px';
+      video.style.width = '1px';
+      video.style.height = '1px';
+      video.style.opacity = '0.001';
+      video.style.pointerEvents = 'none';
+      video.style.zIndex = '-999';
+      document.body.appendChild(video);
+
+      video.addEventListener('seeked', () => {
+        if (!this.state.isPlaying && !this.isExporting) {
+          this.drawFrameImmediate(this.state.currentTime);
+        }
+      });
+      this.mediaElements.set(key, video);
+      return video;
+    } else if (mediaItem.type === 'image') {
+      const key = `img_${clip.mediaId}`;
+      if (this.mediaElements.has(key)) {
+        return this.mediaElements.get(key);
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        this.renderCurrentFrame();
+      };
+      img.src = mediaItem.url;
+      this.mediaElements.set(key, img);
+      return img;
+    }
+    return null;
+  }
+
   getMediaElement(mediaId, secondary = false) {
     if (!mediaId) return null;
     const key = secondary ? `${mediaId}__sec` : mediaId;
@@ -144,13 +223,25 @@ class CanvasRenderer {
       const video = document.createElement('video');
       video.src = mediaItem.url;
       video.crossOrigin = 'anonymous';
-      video.muted = true; // Permanently muted for visual frame rendering (never blocked by iOS Safari)
+      video.muted = true;
       video.playsInline = true;
       video.setAttribute('playsinline', '');
       video.setAttribute('webkit-playsinline', '');
       video.preload = 'auto';
+      video._lastRequestedSeekTime = null;
+
+      video.style.position = 'fixed';
+      video.style.top = '-9999px';
+      video.style.left = '-9999px';
+      video.style.width = '1px';
+      video.style.height = '1px';
+      video.style.opacity = '0.001';
+      video.style.pointerEvents = 'none';
+      video.style.zIndex = '-999';
+      document.body.appendChild(video);
+
       video.addEventListener('seeked', () => {
-        if (!this.state.isPlaying) {
+        if (!this.state.isPlaying && !this.isExporting) {
           this.drawFrameImmediate(this.state.currentTime);
         }
       });
@@ -214,8 +305,8 @@ class CanvasRenderer {
     if (this.audioPlayerB && !this.audioPlayerB.paused) this.audioPlayerB.pause();
   }
 
-  syncActiveVideos(isPlaying) {
-    const time = this.state.currentTime;
+  syncActiveVideos(isPlaying, explicitTime = null) {
+    const time = (explicitTime !== null && explicitTime !== undefined) ? explicitTime : this.state.currentTime;
     const videoClips = this.state.tracks.videoTrack.clips;
 
     // Identify the active clip at current timestamp
@@ -235,11 +326,8 @@ class CanvasRenderer {
     const activeClip = activeIndex >= 0 ? videoClips[activeIndex] : null;
     const nextClip = (activeIndex >= 0 && activeIndex + 1 < videoClips.length) ? videoClips[activeIndex + 1] : null;
 
-    // Use secondary element for consecutive clips with the same mediaId to eliminate cut seeking freeze
-    const prevClip = activeIndex > 0 ? videoClips[activeIndex - 1] : null;
-    const isConsecutiveSameMedia = prevClip && activeClip && prevClip.mediaId === activeClip.mediaId;
-    const useSecondary = isConsecutiveSameMedia && (activeIndex % 2 === 1);
-    const activeEl = activeClip ? this.getMediaElement(activeClip.mediaId, useSecondary) : null;
+    // Dedicated per-clip video element guarantees complete isolation between clips
+    const activeEl = activeClip ? this.getClipMediaElement(activeClip) : null;
     this.currentActiveEl = activeEl;
 
     // 1. Pause any visual video element that is NOT currently active and NOT pre-warming
@@ -263,24 +351,27 @@ class CanvasRenderer {
       if (this.lastActiveClipId !== activeClip.id) {
         this.lastActiveClipId = activeClip.id;
         this._clipPlayStartTime = now;
-        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.05) {
+        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.04) {
           activeEl.currentTime = targetMediaTime;
         }
         activeEl.playbackRate = clipSpeed;
       } else {
         // Continuous playback within same clip:
-        // Use Dynamic Clock Skewing to eliminate decoder seek thrashing at high speeds (2x, 3x, 5x)
+        // Use Dynamic Proportional Clock Skewing to eliminate decoder seek thrashing
         const drift = activeEl.currentTime - targetMediaTime;
         const absDrift = Math.abs(drift);
-        const hardSeekThreshold = Math.max(0.65, 0.45 * clipSpeed);
+        const hardSeekThreshold = 1.2;
+        const nowTime = performance.now();
 
-        if (absDrift > hardSeekThreshold && timeSinceStart >= 500) {
+        if (absDrift > hardSeekThreshold && timeSinceStart >= 500 && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 1500)) {
           if (!activeEl.seeking) {
+            this._lastHardSeekTime = nowTime;
             activeEl.currentTime = targetMediaTime;
           }
-        } else if (absDrift > 0.08 && timeSinceStart >= 300) {
-          // Gentle clock adjustment: +/- 5% to lock in sync without hard seek
-          activeEl.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+        } else if (absDrift > 0.04 && timeSinceStart >= 200) {
+          // Gentle clock adjustment: +/- 12% to lock in sync without hard seek freeze
+          const rateCorrection = Math.max(0.88, Math.min(1.12, 1.0 - drift * 0.25));
+          activeEl.playbackRate = clipSpeed * rateCorrection;
         } else {
           if (activeEl.playbackRate !== clipSpeed) {
             activeEl.playbackRate = clipSpeed;
@@ -296,21 +387,77 @@ class CanvasRenderer {
         if (!activeEl.paused) {
           activeEl.pause();
         }
+        if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.04 && !activeEl.seeking) {
+          activeEl.currentTime = targetMediaTime;
+        }
       }
     } else {
       this.lastActiveClipId = null;
     }
 
-    // 3. Dual Ping-Pong Audio Sync (0-latency seamless transitions)
-    this.syncAudioPlayerPingPong(activeClip, isPlaying, time);
+    // 3. Dual Ping-Pong Audio Sync
+    if (!this.isExporting) {
+      if (isPlaying) {
+        this.syncAudioPlayerPingPong(activeClip, true, time);
+      } else {
+        this.prepareAudioForClip(activeClip, time);
+      }
+    } else {
+      if (this.audioPlayerA && !this.audioPlayerA.paused) this.audioPlayerA.pause();
+      if (this.audioPlayerB && !this.audioPlayerB.paused) this.audioPlayerB.pause();
+    }
 
     // 4. Lookahead Pre-warming (0.8s prior to transition point)
-    if (isPlaying && activeClip && nextClip) {
+    if ((isPlaying || this.isExporting) && activeClip && nextClip) {
       const timeRemaining = (activeClip.startTime + activeClip.duration) - time;
-      if (timeRemaining <= 0.8) {
+      if (timeRemaining <= 0.8 && timeRemaining > 0) {
         this.prewarmNextClip(nextClip, activeIndex + 1);
       }
     }
+  }
+
+  prepareAudioForClip(activeClip, time) {
+    if (!this.activeAudioPlayer || !activeClip) {
+      if (this.audioPlayerA && !this.audioPlayerA.paused) this.audioPlayerA.pause();
+      if (this.audioPlayerB && !this.audioPlayerB.paused) this.audioPlayerB.pause();
+      this._currentAudioClipId = null;
+      return;
+    }
+    const mediaItem = this.state.getMedia(activeClip.mediaId);
+    if (!mediaItem || mediaItem.type !== 'video') {
+      if (this.audioPlayerA && !this.audioPlayerA.paused) this.audioPlayerA.pause();
+      if (this.audioPlayerB && !this.audioPlayerB.paused) this.audioPlayerB.pause();
+      this._currentAudioClipId = null;
+      return;
+    }
+
+    const clipSpeed = activeClip.speed || 1.0;
+    const targetMediaTime = (activeClip.trimStart || 0) + (time - activeClip.startTime) * clipSpeed;
+    const clipVol = activeClip.volume !== undefined ? activeClip.volume : 1.0;
+    const vol = Math.max(0, Math.min(1, clipVol));
+
+    const player = this.activeAudioPlayer;
+    if (this.standbyAudioPlayer && !this.standbyAudioPlayer.paused) {
+      this.standbyAudioPlayer.pause();
+    }
+    if (player.src !== mediaItem.url) {
+      player.src = mediaItem.url;
+    }
+    player.volume = vol;
+    player.muted = (vol === 0);
+    player.playbackRate = clipSpeed;
+    if (player.readyState >= 1) {
+      if (Math.abs(player.currentTime - targetMediaTime) > 0.05) {
+        player.currentTime = targetMediaTime;
+      }
+    } else {
+      player.addEventListener('loadedmetadata', () => {
+        if (Math.abs(player.currentTime - targetMediaTime) > 0.05) {
+          player.currentTime = targetMediaTime;
+        }
+      }, { once: true });
+    }
+    this._currentAudioClipId = activeClip.id;
   }
 
   syncAudioPlayerPingPong(activeClip, isPlaying, time) {
@@ -342,7 +489,7 @@ class CanvasRenderer {
       this._clipPlayStartTime = performance.now();
 
       // Check if standby player was already pre-warmed for this exact clip!
-      if (this._prewarmedClipId === activeClip.id && this.standbyAudioPlayer) {
+      if (this._prewarmedClipId === activeClip.id && this.standbyAudioPlayer && this.standbyAudioPlayer.readyState >= 1) {
         // PING-PONG SWAP: Standby player is ALREADY HOT and READY!
         const oldPlayer = this.activeAudioPlayer;
         this.activeAudioPlayer = this.standbyAudioPlayer;
@@ -397,7 +544,7 @@ class CanvasRenderer {
           player.addEventListener('loadedmetadata', onMeta, { once: true });
         }
 
-        if (this.state.isPlaying) {
+        if (this.state.isPlaying && player.readyState >= 1) {
           const p = player.play();
           if (p !== undefined) p.catch(() => {});
         }
@@ -412,21 +559,24 @@ class CanvasRenderer {
       const timeSinceStart = this._clipPlayStartTime ? (now - this._clipPlayStartTime) : 1000;
       const drift = player.currentTime - targetMediaTime;
       const absDrift = Math.abs(drift);
-      const hardSeekThreshold = Math.max(0.65, 0.45 * clipSpeed);
+      const hardSeekThreshold = 1.2;
+      const nowTime = performance.now();
 
-      if (absDrift > hardSeekThreshold && timeSinceStart >= 500) {
+      if (absDrift > hardSeekThreshold && timeSinceStart >= 500 && (!this._lastHardSeekTime || nowTime - this._lastHardSeekTime > 1500)) {
         if (!player.seeking) {
+          this._lastHardSeekTime = nowTime;
           player.currentTime = targetMediaTime;
         }
-      } else if (absDrift > 0.08 && timeSinceStart >= 300) {
-        player.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+      } else if (absDrift > 0.04 && timeSinceStart >= 200) {
+        const rateCorrection = Math.max(0.88, Math.min(1.12, 1.0 - drift * 0.25));
+        player.playbackRate = clipSpeed * rateCorrection;
       } else {
         if (player.playbackRate !== clipSpeed) {
           player.playbackRate = clipSpeed;
         }
       }
 
-      if (this.state.isPlaying && player.paused) {
+      if (this.state.isPlaying && player.paused && player.readyState >= 1) {
         const p = player.play();
         if (p !== undefined) p.catch(() => {});
       }
@@ -444,16 +594,12 @@ class CanvasRenderer {
     const clipSpeed = nextClip.speed || 1.0;
     const clipVol = nextClip.volume !== undefined ? nextClip.volume : 1.0;
 
-    // 1. Pre-warm Visual Video Element (seek ahead in background)
-    const videoClips = this.state.tracks.videoTrack.clips;
-    const prevClip = nextIndex > 0 ? videoClips[nextIndex - 1] : null;
-    const isConsecutiveSameMedia = prevClip && prevClip.mediaId === nextClip.mediaId;
-    const useSecondary = isConsecutiveSameMedia && (nextIndex % 2 === 1);
-    const nextVideoEl = this.getMediaElement(nextClip.mediaId, useSecondary);
+    // 1. Pre-warm Visual Video Element (dedicated element for nextClip)
+    const nextVideoEl = this.getClipMediaElement(nextClip);
 
     if (nextVideoEl && nextVideoEl.tagName === 'VIDEO' && nextVideoEl !== this.currentActiveEl) {
       this._prewarmingVideoEl = nextVideoEl;
-      if (Math.abs(nextVideoEl.currentTime - targetStartMediaTime) > 0.05) {
+      if (Math.abs(nextVideoEl.currentTime - targetStartMediaTime) > 0.04) {
         nextVideoEl.currentTime = targetStartMediaTime;
       }
     }
@@ -469,13 +615,13 @@ class CanvasRenderer {
       standby.muted = (clipVol === 0);
 
       const onMeta = () => {
-        if (Math.abs(standby.currentTime - targetStartMediaTime) > 0.05) {
+        if (Math.abs(standby.currentTime - targetStartMediaTime) > 0.04) {
           standby.currentTime = targetStartMediaTime;
         }
       };
 
       if (standby.readyState >= 1) {
-        if (Math.abs(standby.currentTime - targetStartMediaTime) > 0.05) {
+        if (Math.abs(standby.currentTime - targetStartMediaTime) > 0.04) {
           standby.currentTime = targetStartMediaTime;
         }
       } else {
@@ -517,10 +663,7 @@ class CanvasRenderer {
     const activeVideoClip = activeIndex >= 0 ? videoTrack.clips[activeIndex] : null;
 
     if (activeVideoClip) {
-      const prevClip = activeIndex > 0 ? videoTrack.clips[activeIndex - 1] : null;
-      const isConsecutiveSameMedia = prevClip && prevClip.mediaId === activeVideoClip.mediaId;
-      const useSecondary = isConsecutiveSameMedia && (activeIndex % 2 === 1);
-      const mediaEl = this.getMediaElement(activeVideoClip.mediaId, useSecondary);
+      const mediaEl = this.getClipMediaElement(activeVideoClip);
       if (mediaEl) {
         ctx.save();
 
@@ -543,11 +686,10 @@ class CanvasRenderer {
 
         if (mediaEl.tagName === 'VIDEO') {
           // If paused or static frame, seek accurately without choking the decoder
-          if (!this.state.isPlaying && options.allowSeek) {
+          if (!this.state.isPlaying && !this.isExporting && options.allowSeek) {
             const clipSpeed = activeVideoClip.speed || 1.0;
             const targetTime = (activeVideoClip.trimStart || 0) + (time - activeVideoClip.startTime) * clipSpeed;
-            // Prevent recursive seek loop by checking if targetTime is different from previous request
-            if (!mediaEl.seeking && mediaEl._lastRequestedSeekTime !== targetTime && Math.abs(mediaEl.currentTime - targetTime) > 0.05) {
+            if (!mediaEl.seeking && (mediaEl._lastRequestedSeekTime === null || Math.abs(mediaEl.currentTime - targetTime) > 0.04)) {
               mediaEl._lastRequestedSeekTime = targetTime;
               mediaEl.currentTime = targetTime;
             }
