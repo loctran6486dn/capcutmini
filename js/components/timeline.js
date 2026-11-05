@@ -25,9 +25,13 @@ class TimelineComponent {
   }
 
   init() {
+    this._cachedClientWidth = this.tracksContainer ? this.tracksContainer.clientWidth : 0;
     this.bindEvents();
     this.initPinchToZoom();
     this.render();
+    window.addEventListener('resize', () => {
+      this._cachedClientWidth = this.tracksContainer ? this.tracksContainer.clientWidth : 0;
+    }, { passive: true });
   }
 
   getPixelsPerSecond() {
@@ -50,7 +54,7 @@ class TimelineComponent {
     // Auto-scroll timeline when playhead reaches right edge during playback
     if (this.state.isPlaying && this.tracksContainer) {
       const scrollLeft = this.tracksContainer.scrollLeft;
-      const clientWidth = this.tracksContainer.clientWidth;
+      const clientWidth = this._cachedClientWidth || this.tracksContainer.clientWidth;
       if (px > scrollLeft + clientWidth - 50) {
         this.tracksContainer.scrollLeft = px - 100;
       }

@@ -286,65 +286,15 @@ class CanvasRenderer {
 
   startLoop() {
     this.lastTimestamp = performance.now();
-    this._decoderStallStartTime = null;
     const loop = (timestamp) => {
       if (!this.state.isPlaying) return;
 
       const elapsed = (timestamp - this.lastTimestamp) / 1000;
       this.lastTimestamp = timestamp;
 
-      const videoClips = this.state.tracks.videoTrack.clips;
-      let activeIndex = -1;
-      const t = this.state.currentTime;
-      for (let i = 0; i < videoClips.length; i++) {
-        const c = videoClips[i];
-        if (t >= c.startTime && t < (c.startTime + c.duration)) {
-          activeIndex = i;
-          break;
-        }
-      }
-      if (activeIndex === -1 && videoClips.length > 0 && t >= this.state.duration - 0.05) {
-        activeIndex = videoClips.length - 1;
-      }
-
-      const activeClip = activeIndex >= 0 ? videoClips[activeIndex] : null;
-      const activeEl = activeClip ? this.getClipMediaElement(activeClip) : null;
-
-      let newTime = this.state.currentTime;
-
-      if (activeClip && activeEl && activeEl.tagName === 'VIDEO') {
-        const clipSpeed = activeClip.speed || 1.0;
-        const trimStart = activeClip.trimStart || 0;
-
-        if (activeEl.readyState >= 2 && !activeEl.seeking && !activeEl.paused) {
-          this._decoderStallStartTime = null;
-          // Hardware media clock drives presentation time in exact lockstep with decoded frames
-          const mediaProgress = (activeEl.currentTime - trimStart) / clipSpeed;
-          const calculatedTime = activeClip.startTime + Math.max(0, mediaProgress);
-          // Strictly monotonic to prevent micro-jitter during B-frame reordering
-          newTime = Math.min(activeClip.startTime + activeClip.duration, Math.max(this.state.currentTime, calculatedTime));
-        } else if (activeEl.seeking || activeEl.readyState < 2) {
-          if (!this._decoderStallStartTime) {
-            this._decoderStallStartTime = performance.now();
-          }
-          const stallDuration = performance.now() - this._decoderStallStartTime;
-          // Allow up to 250ms for buffer/decoder to catch up without clock-drift thrashing.
-          // Beyond 250ms, advance wall clock elapsed so timeline never freezes or deadlocks.
-          if (stallDuration < 250) {
-            newTime = this.state.currentTime;
-          } else {
-            newTime = this.state.currentTime + Math.min(elapsed, 0.1);
-          }
-        } else {
-          this._decoderStallStartTime = null;
-          // Video element paused or starting up: advance with clamped elapsed
-          newTime = this.state.currentTime + Math.min(elapsed, 0.1);
-        }
-      } else {
-        this._decoderStallStartTime = null;
-        // Image, text, or gap on timeline: advance with wall-clock elapsed
-        newTime = this.state.currentTime + Math.min(elapsed, 0.1);
-      }
+      // Cap delta time to 0.1s to prevent huge jumps after backgrounding or long frames
+      const clampedElapsed = Math.min(elapsed, 0.1);
+      const newTime = this.state.currentTime + clampedElapsed;
 
       if (newTime >= this.state.duration) {
         this.state.seek(this.state.duration);
@@ -396,9 +346,17 @@ class CanvasRenderer {
         break;
       }
     }
-    // Safeguard boundary: if exactly at end of timeline, keep the last clip active
-    if (activeIndex === -1 && videoClips.length > 0 && time >= this.state.duration - 0.05) {
-      activeIndex = videoClips.length - 1;
+    // Safeguard boundary: if float rounding leaves a sub-millisecond gap between clips, snap to next clip
+    if (activeIndex === -1 && videoClips.length > 0) {
+      for (let i = 0; i < videoClips.length; i++) {
+        if (time < videoClips[i].startTime + videoClips[i].duration) {
+          activeIndex = i;
+          break;
+        }
+      }
+      if (activeIndex === -1 && time >= this.state.duration - 0.05) {
+        activeIndex = videoClips.length - 1;
+      }
     }
 
     const activeClip = activeIndex >= 0 ? videoClips[activeIndex] : null;
@@ -429,13 +387,14 @@ class CanvasRenderer {
       if (this.lastActiveClipId !== activeClip.id) {
         this.lastActiveClipId = activeClip.id;
         this._clipPlayStartTime = now;
+        this._lastVisualHardSeekTime = 0;
         if (activeEl.readyState >= 1) {
-          if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.04) {
+          if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.08) {
             activeEl.currentTime = targetMediaTime;
           }
         } else {
           const onMeta = () => {
-            if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.04) {
+            if (Math.abs(activeEl.currentTime - targetMediaTime) > 0.08) {
               activeEl.currentTime = targetMediaTime;
             }
           };
@@ -444,27 +403,27 @@ class CanvasRenderer {
             activeEl.load();
           } catch (e) {}
         }
-        activeEl.playbackRate = clipSpeed;
+        if (activeEl.playbackRate !== clipSpeed) {
+          activeEl.playbackRate = clipSpeed;
+        }
       } else if (isPlaying) {
         // Continuous playback within same clip:
         // Use Dynamic Proportional Clock Skewing to eliminate decoder seek thrashing
         // ONLY apply after initial 350ms buffer ramp-up so video decoder starts smoothly without fighting clock
-        if (timeSinceStart >= 350) {
+        if (timeSinceStart >= 350 && !activeEl.seeking && activeEl.readyState >= 2) {
           const drift = activeEl.currentTime - targetMediaTime;
           const absDrift = Math.abs(drift);
-          const hardSeekThreshold = 1.2;
+          const hardSeekThreshold = 1.0;
           const nowTime = performance.now();
 
           if (absDrift > hardSeekThreshold && (!this._lastVisualHardSeekTime || nowTime - this._lastVisualHardSeekTime > 2000)) {
-            if (!activeEl.seeking) {
-              this._lastVisualHardSeekTime = nowTime;
-              activeEl.currentTime = targetMediaTime;
-            }
-          } else if (absDrift > 0.05 && absDrift <= hardSeekThreshold) {
+            this._lastVisualHardSeekTime = nowTime;
+            activeEl.currentTime = targetMediaTime;
+          } else if (absDrift > 0.08 && absDrift <= hardSeekThreshold) {
             // Gentle clock adjustment: +/- 10% to lock in sync without hard seek freeze
             const rateCorrection = Math.max(0.90, Math.min(1.10, 1.0 - drift * 0.20));
             const desiredRate = clipSpeed * rateCorrection;
-            if (Math.abs(activeEl.playbackRate - desiredRate) > 0.01) {
+            if (Math.abs(activeEl.playbackRate - desiredRate) > 0.02) {
               activeEl.playbackRate = desiredRate;
             }
           } else {
@@ -584,10 +543,11 @@ class CanvasRenderer {
     const clipVol = activeClip.volume !== undefined ? activeClip.volume : 1.0;
     const vol = Math.max(0, Math.min(1, clipVol));
 
-    // TRANSITION: Clip changed!
+      // TRANSITION: Clip changed!
     if (this._currentAudioClipId !== activeClip.id) {
       this._currentAudioClipId = activeClip.id;
       this._clipPlayStartTime = performance.now();
+      this._lastAudioHardSeekTime = 0;
 
       // Check if standby player was already pre-warmed for this exact clip!
       if (this._prewarmedClipId === activeClip.id && this.standbyAudioPlayer && this.standbyAudioPlayer.readyState >= 1) {
@@ -628,7 +588,7 @@ class CanvasRenderer {
         player.playbackRate = clipSpeed;
 
         const onMeta = () => {
-          if (Math.abs(player.currentTime - targetMediaTime) > 0.05) {
+          if (Math.abs(player.currentTime - targetMediaTime) > 0.08) {
             player.currentTime = targetMediaTime;
           }
           if (this.state.isPlaying && player.paused) {
@@ -638,7 +598,7 @@ class CanvasRenderer {
         };
 
         if (player.readyState >= 1) {
-          if (Math.abs(player.currentTime - targetMediaTime) > 0.05) {
+          if (Math.abs(player.currentTime - targetMediaTime) > 0.08) {
             player.currentTime = targetMediaTime;
           }
         } else if (!player._pendingOnReady) {
@@ -665,21 +625,19 @@ class CanvasRenderer {
       const now = performance.now();
       const timeSinceStart = this._clipPlayStartTime ? (now - this._clipPlayStartTime) : 1000;
 
-      if (this.state.isPlaying && timeSinceStart >= 350) {
+      if (this.state.isPlaying && timeSinceStart >= 350 && !player.seeking && player.readyState >= 2) {
         const drift = player.currentTime - targetMediaTime;
         const absDrift = Math.abs(drift);
-        const hardSeekThreshold = 1.2;
+        const hardSeekThreshold = 1.0;
         const nowTime = performance.now();
 
         if (absDrift > hardSeekThreshold && (!this._lastAudioHardSeekTime || nowTime - this._lastAudioHardSeekTime > 2000)) {
-          if (!player.seeking) {
-            this._lastAudioHardSeekTime = nowTime;
-            player.currentTime = targetMediaTime;
-          }
-        } else if (absDrift > 0.05 && absDrift <= hardSeekThreshold) {
+          this._lastAudioHardSeekTime = nowTime;
+          player.currentTime = targetMediaTime;
+        } else if (absDrift > 0.08 && absDrift <= hardSeekThreshold) {
           const rateCorrection = Math.max(0.90, Math.min(1.10, 1.0 - drift * 0.20));
           const desiredRate = clipSpeed * rateCorrection;
-          if (Math.abs(player.playbackRate - desiredRate) > 0.01) {
+          if (Math.abs(player.playbackRate - desiredRate) > 0.02) {
             player.playbackRate = desiredRate;
           }
         } else {

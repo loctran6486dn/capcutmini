@@ -250,7 +250,10 @@ class AudioMixer {
             activeAudioEl.currentTime = targetMediaTime;
           }
         } else if (absDrift > 0.08 && timeSinceStart >= 300) {
-          activeAudioEl.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+          const desiredRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+          if (Math.abs(activeAudioEl.playbackRate - desiredRate) > 0.02) {
+            activeAudioEl.playbackRate = desiredRate;
+          }
         } else {
           if (activeAudioEl.playbackRate !== clipSpeed) {
             activeAudioEl.playbackRate = clipSpeed;
@@ -317,7 +320,10 @@ class AudioMixer {
               activeVideoAudioEl.currentTime = targetMediaTime;
             }
           } else if (absDrift > 0.08 && timeSinceStart >= 300) {
-            activeVideoAudioEl.playbackRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+            const desiredRate = (drift < 0) ? (clipSpeed * 1.05) : (clipSpeed * 0.95);
+            if (Math.abs(activeVideoAudioEl.playbackRate - desiredRate) > 0.02) {
+              activeVideoAudioEl.playbackRate = desiredRate;
+            }
           } else {
             if (activeVideoAudioEl.playbackRate !== clipSpeed) {
               activeVideoAudioEl.playbackRate = clipSpeed;
